@@ -30,6 +30,7 @@ import numpy as np
 import xgboost as xgb
 
 from conformal import SET_FINE, SET_NAMES, SET_SCAM, SET_UNSURE, classify as conformal_classify
+from integrations import check_mulehunter
 from reasons import make_explainer, native_contrib, shap_matrix, top_reasons
 from risk_common import FEATURE_COLUMNS, load_features
 
@@ -91,14 +92,22 @@ def decide(
     reasons=None,
     amount: float = 0.0,
     thr: Thresholds = DEFAULT_THRESHOLDS,
+    mulehunter_status: str | None = None,
 ) -> dict:
-    """Pure policy function: no I/O, no model. Returns the 4 contract fields."""
+    """Pure policy function: no I/O, no model. Returns the 4 contract fields.
+
+    `mulehunter_status` is the mock MuleHunter.AI verdict for the receiving
+    account ("clean"/"suspicious"/"mule"). A "mule" verdict while the conformal
+    set is unsure ({fine, scam}) is treated as a Receiving Account hard signal.
+    """
     soft = soft_signals(soft)
     n_soft = sum(soft.values())
 
     hard = hard_signals(features, thr)
     payment = any(hard[f] for f in PAYMENT_HISTORY_FEATURES)
     receiving = any(hard[f] for f in RECEIVING_ACCOUNT_FEATURES)
+    mule_signal = mulehunter_status == "mule" and conf_set == SET_NAMES[SET_UNSURE]
+    receiving = receiving or mule_signal
     n_hard = int(payment) + int(receiving)
 
     if conf_set == SET_NAMES[SET_FINE]:
@@ -138,10 +147,13 @@ def thresholds_from_args(args) -> Thresholds:
     )
 
 
-def active_signals(features, soft, thr: Thresholds) -> dict:
+def active_signals(features, soft, thr: Thresholds, mulehunter_status: str | None = None,
+                   conf_set: str | None = None) -> dict:
     """Diagnostic view of which signals fired (not part of the return contract)."""
     hard = hard_signals(features, thr)
     soft_norm = soft_signals(soft)
+    if mulehunter_status == "mule" and conf_set == SET_NAMES[SET_UNSURE]:
+        hard["mulehunter"] = True
     return {
         "hard": {k: v for k, v in hard.items() if v},
         "soft": {k: v for k, v in soft_norm.items() if v},
@@ -155,7 +167,7 @@ def run(args) -> int:
 
     model = xgb.XGBClassifier()
     model.load_model(args.model)
-    df = load_features(args.features, columns=FEATURE_COLUMNS + ["amount"])
+    df = load_features(args.features, columns=FEATURE_COLUMNS + ["amount", "receiver_id"])
     qhat = load_qhat(args.conformal)
     soft = json.loads(args.soft_signals) if args.soft_signals else {}
 
@@ -180,17 +192,18 @@ def run(args) -> int:
     for j, (_, row) in enumerate(sel.iterrows()):
         conf_set = conformal_classify(float(p[j]), qhat)
         amount = float(args.amount) if args.amount is not None else float(row["amount"])
+        mulehunter = check_mulehunter(row["receiver_id"])
         try:
             sv = shap_matrix(explainer, X.iloc[[j]])[0]
         except Exception:
             sv = native_contrib(model, X.iloc[[j]])[0]
         reasons = [text for _, _, text in top_reasons(sv)]
 
-        decision = decide(conf_set, row, soft, reasons, amount, thr)
-        fired = active_signals(row, soft, thr)
+        decision = decide(conf_set, row, soft, reasons, amount, thr, mulehunter)
+        fired = active_signals(row, soft, thr, mulehunter, conf_set)
 
         print(f"txn_id={int(row['txn_id'])} p_scam={float(p[j]):.4f} set={conf_set} "
-              f"amount={amount:,.2f}")
+              f"amount={amount:,.2f} mulehunter={mulehunter!r}")
         print(f"   hard={fired['hard'] or '{}'} soft={fired['soft'] or '{}'}")
         for text in decision["reasons"]:
             print(f"   - {text}")
@@ -213,25 +226,33 @@ def run_self_test() -> bool:
     soft_off = {"chat_stage": "none"}
 
     cases = [
-        # name, set, features, soft, amount, action, minutes, analyst
-        ("fine releases", fine, both_feats, chat, 500_000.0, "release", 0, False),
-        ("scam holds small", scam, none_feats, soft_off, 500.0, "hold", 60, False),
-        ("scam holds big + analyst", scam, none_feats, soft_off, 150_000.0, "hold", 60, True),
-        ("unsure no signals -> nudge", unsure, none_feats, soft_off, 900.0, "nudge", 0, False),
-        ("unsure soft only -> nudge", unsure, none_feats, chat, 900.0, "nudge", 0, False),
-        ("unsure screen only -> nudge", unsure, none_feats, screen, 900.0, "nudge", 0, False),
-        ("unsure 1 hard no soft -> nudge", unsure, pay_feats, soft_off, 900.0, "nudge", 0, False),
-        ("unsure 1 rcv no soft -> nudge", unsure, rcv_feats, soft_off, 900.0, "nudge", 0, False),
-        ("unsure pay + soft -> hold", unsure, pay_feats, chat, 900.0, "hold", 60, False),
-        ("unsure rcv + soft -> hold", unsure, rcv_feats, screen, 900.0, "hold", 60, False),
-        ("unsure pay + rcv -> hold", unsure, both_feats, soft_off, 900.0, "hold", 60, False),
-        ("unsure pay + rcv big -> analyst", unsure, both_feats, soft_off, 150_000.0, "hold", 60, True),
-        ("unsure hold analyst only if >100k", unsure, both_feats, soft_off, 99_999.0, "hold", 60, False),
+        # name, set, features, soft, amount, action, minutes, analyst, mulehunter
+        ("fine releases", fine, both_feats, chat, 500_000.0, "release", 0, False, None),
+        ("scam holds small", scam, none_feats, soft_off, 500.0, "hold", 60, False, None),
+        ("scam holds big + analyst", scam, none_feats, soft_off, 150_000.0, "hold", 60, True, None),
+        ("unsure no signals -> nudge", unsure, none_feats, soft_off, 900.0, "nudge", 0, False, None),
+        ("unsure soft only -> nudge", unsure, none_feats, chat, 900.0, "nudge", 0, False, None),
+        ("unsure screen only -> nudge", unsure, none_feats, screen, 900.0, "nudge", 0, False, None),
+        ("unsure 1 hard no soft -> nudge", unsure, pay_feats, soft_off, 900.0, "nudge", 0, False, None),
+        ("unsure 1 rcv no soft -> nudge", unsure, rcv_feats, soft_off, 900.0, "nudge", 0, False, None),
+        ("unsure pay + soft -> hold", unsure, pay_feats, chat, 900.0, "hold", 60, False, None),
+        ("unsure rcv + soft -> hold", unsure, rcv_feats, screen, 900.0, "hold", 60, False, None),
+        ("unsure pay + rcv -> hold", unsure, both_feats, soft_off, 900.0, "hold", 60, False, None),
+        ("unsure pay + rcv big -> analyst", unsure, both_feats, soft_off, 150_000.0, "hold", 60, True, None),
+        ("unsure hold analyst only if >100k", unsure, both_feats, soft_off, 99_999.0, "hold", 60, False, None),
+        # MuleHunter.AI as a Receiving Account hard signal (unsure set only)
+        ("unsure mule alone -> nudge", unsure, none_feats, soft_off, 900.0, "nudge", 0, False, "mule"),
+        ("unsure mule + pay -> hold", unsure, pay_feats, soft_off, 900.0, "hold", 60, False, "mule"),
+        ("unsure mule + soft -> hold", unsure, none_feats, chat, 900.0, "hold", 60, False, "mule"),
+        ("unsure suspicious -> nudge", unsure, none_feats, soft_off, 900.0, "nudge", 0, False, "suspicious"),
+        ("unsure clean -> nudge", unsure, none_feats, soft_off, 900.0, "nudge", 0, False, "clean"),
+        ("fine mule ignored -> release", fine, none_feats, soft_off, 900.0, "release", 0, False, "mule"),
+        ("scam mule ignored -> hold", scam, none_feats, soft_off, 900.0, "hold", 60, False, "mule"),
     ]
 
     n_pass = 0
-    for name, cset, feats, soft, amt, exp_action, exp_min, exp_analyst in cases:
-        got = decide(cset, feats, soft, ["r1", "r2", "r3"], amt)
+    for name, cset, feats, soft, amt, exp_action, exp_min, exp_analyst, mh in cases:
+        got = decide(cset, feats, soft, ["r1", "r2", "r3"], amt, DEFAULT_THRESHOLDS, mh)
         ok = (
             got["action"] == exp_action
             and got["auto_release_minutes"] == exp_min
