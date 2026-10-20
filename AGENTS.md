@@ -1,5 +1,16 @@
 # AGENTS.md
 
+## Finale changes (2026-10-20; supersedes older status below)
+
+- This is now a Git repository. All changes use feature branches and PRs.
+- Core setup uses Python 3.12, `.venv`, and `requirements-core.txt`.
+- Run `python -m unittest discover -s tests -v` and the policy self-test.
+- Both `{scam}` and `{fine, scam}` require the two-group safeguard before a
+  hold. A mule verdict counts as receiving-account evidence for either set.
+  `{fine}` still releases. Unknown prediction sets raise ValueError.
+- Preserve the four-field `decide()` contract. Record changes in docs/WORK_LOG.md
+  and the user-requested workspace log at ../WORK_LOG.md.
+
 ## Status
 
 Python 3.12 ML/AI project, no git repo. Sources: `src/journey_generator.py`

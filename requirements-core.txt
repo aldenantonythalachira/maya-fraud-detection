@@ -1,0 +1,10 @@
+# Core detector and Streamlit demo; Python 3.12.
+numpy>=2.0,<3
+pandas>=2.2,<3
+networkx>=3.0,<4
+xgboost>=2.0,<4
+scikit-learn>=1.4,<2
+shap>=0.45,<1
+streamlit>=1.45,<2
+plotly>=5.0,<7
+jinja2>=3.1.5,<4
