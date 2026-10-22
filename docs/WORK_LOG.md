@@ -123,3 +123,9 @@
   the separate PR-triggered run was still running when checked.
 - Working tree was clean after stage publication. Runtime data/models are ignored.
   Subsequent commit only records this publication receipt in the running log.
+
+### Decision-platform baseline and staged scope
+- Started from clean d1a01ff on codex/decision-platform. Policy 20/20 and pip check pass.
+- Scope and stage exit checks are in docs/DELIVERY_REVIEW.md. Full baseline suite running.
+- Preserve graph/model compatibility; unvalidated research features remain explicitly partial.
+
