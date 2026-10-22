@@ -5,3 +5,5 @@
 @media(max-width:760px){.topbar{height:72px;padding:0 20px}.brand{font-size:28px}.brand-mark{width:32px;height:32px;font-size:24px}.top-actions{gap:8px}.demo-label{font-size:10px}.icon-button{font-size:10px;padding:9px}.workspace,.workspace.inspecting{display:block;padding:0 20px;margin:28px auto 35px}.workspace.inspecting aside{max-width:530px;margin:40px auto 0}main{min-height:520px}.greeting{margin-bottom:23px}.wallet-card{padding:26px;min-height:202px}.balance{font-size:37px}.card{padding:22px}footer{padding:20px;gap:20px;line-height:1.6}.people{gap:8px}.person{font-size:10px}.avatar{width:44px;height:44px}.inspector-heading{padding-top:25px;border-top:1px solid var(--line)}}
 @media(max-width:390px){.demo-label{max-width:82px;line-height:1.5}.demo-label i{flex:none}.topbar{padding:0 16px}.workspace,.workspace.inspecting{padding:0 16px}.card{padding:19px}.amount-entry input{max-width:220px;font-size:43px}.review-amount{font-size:35px}.receipt-row{gap:15px}}
 @media(prefers-reduced-motion:reduce){*,*:before,*:after{animation:none!important;transition:none!important}.spinner{border-top-color:#406d52}}
+
+

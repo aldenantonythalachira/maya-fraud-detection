@@ -129,3 +129,12 @@
 - Scope and stage exit checks are in docs/DELIVERY_REVIEW.md. Full baseline suite running.
 - Preserve graph/model compatibility; unvalidated research features remain explicitly partial.
 
+
+### Wallet, roles and evidence implementation
+- Simplified payment copy and isolated the decision explorer and role console.
+- Added scoped expiring/revocable recipient sharing, independent analyst/contact capabilities and consented durable inboxes.
+- Bound analyst approval to exact review ID, added deletion, mock-provider envelopes, correlation IDs, failure events, feature witnesses and verification bundles.
+- Found and fixed SHAP using all trees while risk used best_iteration; now explanations must reconstruct the displayed score.
+- 51 tests pass outside the socket-restricted Windows sandbox. JavaScript syntax checks pass. Browser completed INR 1,250.50 dummy transfer; remaining QA in progress.
+- No research-only voice/stage/privacy weights invented; no default branch changes.
+
