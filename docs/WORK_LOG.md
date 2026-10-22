@@ -148,3 +148,11 @@
 - Added feature/architecture/privacy/model-lifecycle documentation, deck checklist and final screenshot. Source/model/database recovery boundaries remain explicit.
 - Default branch untouched. Preparing final stage commit and draft PR.
 
+
+### Publication receipt — 23 October 2026
+- Published codex/decision-platform at implementation commit 6db67c7.
+- Draft PR #5: https://github.com/aldenantonythalachira/maya-fraud-detection/pull/5 (base codex/interactive-wallet).
+- Recovery tags maya/04-decision-platform (286b960) and maya/05-evaluation-and-handoff (6db67c7) are published.
+- Implementation CI passed: https://github.com/aldenantonythalachira/maya-fraud-detection/actions/runs/39850233275.
+- No merge or default-branch changes. Final follow-up commit only records this receipt; its CI status must be read separately.
+
