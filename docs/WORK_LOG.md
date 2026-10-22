@@ -110,3 +110,16 @@
   Checked responsive widths 360/390/768/1280; corrected desktop vertical alignment.
 - Added clean-clone bootstrap, runbook, CI smoke rebuild and behavioral audit.
   Research/calibration limits remain explicit; no verdict is pinned for demo polish.
+
+### Publication receipt
+
+- Interactive stage commit: 396ac26 on codex/interactive-wallet, pushed to origin.
+- Draft PR #4: https://github.com/aldenantonythalachira/maya-fraud-detection/pull/4.
+  Review/merge order is foundation #1 -> payment review #2 -> generated worlds #3
+  -> interactive wallet #4. No PR was merged and main was not changed.
+- Published recovery tags: maya/00-original (687635e), maya/01-payment-review
+  (031321b), maya/02-generated-worlds (dc6884a), maya/03-interactive-wallet (396ac26).
+- GitHub Actions push run 39744982587 completed successfully for 396ac26;
+  the separate PR-triggered run was still running when checked.
+- Working tree was clean after stage publication. Runtime data/models are ignored.
+  Subsequent commit only records this publication receipt in the running log.
