@@ -82,3 +82,31 @@
   Correcting direction requires a separately versioned retrain, not a silent fix.
 - 25 tests pass, including independent brute-force feature comparison across
   five random worlds, seed replay, probe windows and future-evidence exclusion.
+
+### Stage 03 - Interactive wallet and transparent execution
+
+- Stage 02 pushed as dc6884a, tag maya/02-generated-worlds, draft PR #3:
+  https://github.com/aldenantonythalachira/maya-fraud-detection/pull/3.
+- Added a loopback FastAPI service, persistent ordered SSE events, world/session
+  binding, actual XGBoost/native tree-SHAP inference and immutable policy replay.
+- Added a balanced dummy wallet ledger, integer paise, server-side review/context/
+  evidence/version checks, atomic execution, durable intent idempotency, recovery
+  after restart, cancellation, timed holds and revision-bound analyst approval.
+- Added clean mobile-first payer, recipient, review, warning, demo authorization,
+  receipt and history screens. Inspector exposes real features, graph edges,
+  uncertainty, policy groups, versions, execution events and JSON downloads.
+- Added report-delay counterfactuals retaining original snapshots/holds, virtual
+  clock controls and daily-deduplicated synthetic contact alerts.
+- Deliberately used native browser ES modules/CSS instead of React/Vite so the
+  demo starts with one Python command and has no extra frontend dependency/build.
+  Kept existing Streamlit demos and all risk policy contracts intact.
+- Fixed a held-review snapshot aliasing bug discovered by actual-model tests;
+  saved input objects are copied before updating the intent's hold metadata.
+- 39 automated tests and 20 policy cases pass; pip check and JS syntax check pass.
+  Twelve three-seed behavioral replays pass; processing p95 25.60ms with stated
+  limits, not end-to-end latency or accuracy. Details: docs/VALIDATION.md.
+- Browser QA completed custom paise transfer, live hold, stale-review rejection,
+  changed-evidence nudge, original replay, receipt reload and recipient credit.
+  Checked responsive widths 360/390/768/1280; corrected desktop vertical alignment.
+- Added clean-clone bootstrap, runbook, CI smoke rebuild and behavioral audit.
+  Research/calibration limits remain explicit; no verdict is pinned for demo polish.

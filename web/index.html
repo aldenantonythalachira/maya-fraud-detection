@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#193b34">
+  <meta name="description" content="MAYA: a transparent, interactive dummy payment wallet.">
+  <title>MAYA · Pay with clarity</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" type="module"></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="/" aria-label="MAYA home"><span class="brand-mark">m</span><span>maya<span class="brand-dot">.</span></span></a>
+    <div class="top-actions"><span class="demo-label"><i></i> Dummy payments only</span><button class="icon-button" id="inspect-toggle" aria-expanded="false">How it works <span aria-hidden="true">↗</span></button></div>
+  </header>
+  <div class="workspace" id="workspace">
+    <main id="app" tabindex="-1"><div class="loading-card">Opening your demo wallet…</div></main>
+    <aside id="inspector" aria-label="Simulation and decision inspector">
+      <div class="inspector-heading"><span class="eyebrow">BEHIND THE PAYMENT</span><h2>Nothing hidden.</h2><p>Follow the data. See the decision.</p></div>
+      <section class="panel controls">
+        <div class="section-title"><h3>Simulation studio</h3><span class="small-tag">LIVE BACKEND</span></div>
+        <p class="muted">Generate the history. The model decides the outcome.</p>
+        <label for="preset">World</label><select id="preset"><option value="everyday">Everyday payments</option><option value="investment">Investment journey</option><option value="refund">Refund claim</option><option value="probes">Tiny payment probes</option></select>
+        <label for="seed">Replay seed</label><div class="input-row"><input id="seed" type="number" min="0" max="4294967295"><button class="secondary" id="random-seed" aria-label="Choose a new random seed">↻</button></div>
+        <button class="secondary full" id="new-world">Generate a new world</button>
+        <p class="micro" id="world-meta">Connecting…</p>
+      </section>
+      <section class="panel"><div class="section-title"><h3>Execution trace</h3><span id="stream-status" class="connection">Connecting</span></div><ol id="trace" class="trace"><li>Make a payment to follow its execution.</li></ol></section>
+      <div id="decision-inspector"></div>
+      <section class="panel"><h3>Try a change</h3><p class="muted">Simulator clock is paused. Advance it explicitly to test expiry and fresh evidence.</p><div class="button-stack"><button class="secondary" id="advance">Advance simulated time 1 hour</button><button class="secondary" id="add-report">Add a synthetic recipient report</button><button class="secondary" id="observer-link">Open recipient view ↗</button></div><p class="micro">Reports enter the model's graph on the following UTC day. Observer links are read-only; anyone with the link can view dummy balances.</p></section>
+      <section class="panel"><h3>Trusted contact · Priya</h3><div id="contact-inbox" class="muted">In-app simulation inbox. No real messages are sent.</div></section>
+      <p class="inspector-foot">Synthetic identities and history. Local model inference.<br>No bank connection. No real money. No real PIN.</p>
+    </aside>
+  </div>
+  <div id="notice" role="status" aria-live="polite"></div>
+  <footer>Made for a moment of clarity. <span>MAYA · Interactive research demo</span></footer>
+</body>
+</html>

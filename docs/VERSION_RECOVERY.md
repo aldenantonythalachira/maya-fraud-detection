@@ -3,6 +3,12 @@
 Validated stages use feature branches, ordinary commits, annotated `maya/*` tags
 and pull requests. Main is never force-pushed. List versions:
 
+Checkpoints: `maya/00-original` is the original project; `maya/01-payment-review`
+adds bound reviews and this recovery helper; `maya/02-generated-worlds` adds
+causal histories and batch-parity features; `maya/03-interactive-wallet` adds the
+complete local dummy-payment loop. The original checkpoint predates the helper;
+after restoring it, use `git switch <your-newer-branch>` to return.
+
 ```powershell
 .\.venv\Scripts\python.exe scripts/versions.py list
 ```
