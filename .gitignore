@@ -1,6 +1,7 @@
 # Data and models (too large for GitHub)
 data/*.csv
 models/*.json
+data/*.sqlite*
 
 # Python
 __pycache__/
@@ -10,3 +11,8 @@ venv/
 
 # OS
 .DS_Store
+
+# Simulator runtime and scratch outputs
+tmp/
+data/simulator*.sqlite*
+data/evaluation*.json
