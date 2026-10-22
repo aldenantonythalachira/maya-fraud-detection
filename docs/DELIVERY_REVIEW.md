@@ -34,3 +34,17 @@ conservation and replay checks. Preserve the four-field policy contract.
 Scope: honest manifest, held-out evaluation command, baseline comparison, verified
 bundle, threat model, diagrams, release checklist and recovery instructions.
 Acceptance: reproducible scripts and no claims beyond recorded measurements.
+
+## Completion evidence — 23 October 2026
+
+- Wallet/role/evidence stage committed as 286b960, checkpoint maya/04-decision-platform.
+- Final 52-test suite, policy 20/20, dependency check and JS syntax checks passed.
+- Actual browser completed free-form transfer, hold/contact, fresh review, independent
+  analyst approval and matching recipient settlement. All requested layout widths inspected.
+- Model/calibration now use disjoint validation days; manifest and evaluation/gate
+  scripts added. Coverage target passes; recall target fails; promotion remains blocked.
+- Full unseen-type evaluation is intentionally reported as weak/inconclusive where
+  support is inadequate. No research weights, numbers or missing integrations invented.
+- Complete architecture/feature/privacy/lifecycle contracts and deck checklist supplied.
+  This is a local demo delivery with explicit research gaps, not completion of every
+  trained-model or banking claim in the original deck.

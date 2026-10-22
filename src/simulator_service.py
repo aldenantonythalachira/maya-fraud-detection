@@ -184,7 +184,8 @@ class Simulator(Access):
             return dict(**{k: v for k, v in world.items() if k not in ("accounts", "events")}, accounts=accounts,
                         transfers=transfers, intents=intents,
                         event_count=len(world["events"]), model_version=self.model.version,
-                        calibration_version=self.model.calibration_version, feature_version=FEATURE_VERSION)
+                        calibration_version=self.model.calibration_version, feature_version=FEATURE_VERSION,
+                        policy_version=POLICY_VERSION, inference_version=INFERENCE_VERSION)
 
     def balance(self, wid, account):
         return self.db.execute("SELECT COALESCE(SUM(delta),0) FROM sim_ledger WHERE world=? AND account=?", (wid, account)).fetchone()[0]

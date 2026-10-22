@@ -138,3 +138,13 @@
 - 51 tests pass outside the socket-restricted Windows sandbox. JavaScript syntax checks pass. Browser completed INR 1,250.50 dummy transfer; remaining QA in progress.
 - No research-only voice/stage/privacy weights invented; no default branch changes.
 
+
+### Evaluation, browser verification and handoff — 23 October 2026
+- Separated tuning/calibration days and rebuilt smoke artifacts; coverage 92.10%, recall at tuning-selected threshold 35.48% (fails deck target). No promotion claimed.
+- Added three-seed unseen-type benchmark: 4 measured low-support configurations, 5 inconclusive; every result retained in docs/EVALUATION_RESULTS.md.
+- Added manifest, explicit model gates, pinned test requirements and CI evaluation artifacts.
+- Final 52-test suite and policy 20/20 passed; HTTP/SSE/restart test now kills only its complete owned Windows child process tree.
+- Browser verified INR 125,000 two-group hold, consented contact inbox, fresh review, separate analyst approval and matching recipient credit. All four responsive widths inspected without inner overflow.
+- Added feature/architecture/privacy/model-lifecycle documentation, deck checklist and final screenshot. Source/model/database recovery boundaries remain explicit.
+- Default branch untouched. Preparing final stage commit and draft PR.
+

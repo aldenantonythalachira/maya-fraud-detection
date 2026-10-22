@@ -12,7 +12,9 @@ if (observeToken && location.pathname === '/recipient') sessionStorage.setItem('
 if (location.hash) history.replaceState(null, '', location.pathname);
 
 async function api(path, data, method = 'POST') {
-  const response = await fetch('/api/' + path, data === undefined ? {headers:observeToken ? {'X-Maya-Access':observeToken} : {}} : {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)});
+  const options = data === undefined ? {headers:observeToken ? {'X-Maya-Access':observeToken} : {}} : {method, headers:{'Content-Type':'application/json'}, body:JSON.stringify(data)};
+  options.signal=AbortSignal.timeout(10000);
+  const response = await fetch('/api/' + path, options);
   const body = await response.json();
   if (!response.ok) throw new Error(typeof body.detail === 'string' ? body.detail : 'Check the payment details and try again.');
   return body;
@@ -90,6 +92,7 @@ function staleReason() {
   if (!review || !p) return 'Get a fresh review before continuing.';
   if (p.state !== 'pending') return `This payment is ${p.state}.`;
   if (p.revision !== review.payment.revision) return 'Payment details changed. Get a fresh review.';
+  if (review.versions.model!==world.model_version || review.versions.calibration!==world.calibration_version || review.versions.inference!==world.inference_version) return 'Computation version changed. Get a fresh review.';
   if (world.revision !== review.world_revision) return 'Available evidence changed. Get a fresh review.';
   if (world.now >= review.expires_at) return 'This review expired. Get a fresh review.';
   return '';
@@ -99,11 +102,12 @@ function reviewScreen() {
   const p = currentPayment();
   const d = review.decision;
   const held = p.hold_revision === p.revision && world.now < p.hold_until;
-  const analyst = p.hold_revision === p.revision && p.analyst_required && !p.analyst_approved;
-  const state = held || analyst ? 'hold' : d.action;
+  const analyst = p.hold_revision === p.revision && p.analyst_required && (!p.analyst_approved || p.analyst_review !== review.id);
+  const eligible = p.hold_revision === p.revision && !held && !analyst;
+  const state = held || analyst ? 'hold' : eligible ? 'nudge' : d.action;
   const stale = staleReason();
   const remaining = Math.max(0, (p.hold_until || 0) - world.now);
-  const title = state === 'hold' ? 'Payment on hold' : state === 'nudge' ? 'Check before paying' : 'Ready to pay';
+  const title = eligible ? 'Confirm after review' : state === 'hold' ? 'Payment on hold' : state === 'nudge' ? 'Check before paying' : 'Ready to pay';
   app.innerHTML = header('Review your payment', 'STEP 3 OF 3') + `<section class="card">${recipientHeader()}<div class="review-amount">${money(payment.amount_paise)}</div><p class="review-caption">From your demo account → ${escape(account(recipient).name)}</p><div class="verdict ${state}"><span class="eyebrow">MAYA PAYMENT CHECK</span><h2>${title}</h2>${d.reasons.length ? `<ul>${d.reasons.map(r => `<li>${escape(r)}</li>`).join('')}</ul>` : ''}${held ? `<div class="hold-time">${Math.floor(remaining / 60)}m ${remaining % 60}s</div><p class="micro">Simulated time · no automatic payment</p>` : ''}${analyst ? '<p><strong>Analyst approval required</strong></p>' : ''}</div>
     ${stale ? `<p class="muted bottom-space" role="status">${escape(stale)}</p>${button('rereview','Get a fresh review','primary full bottom-space')}` : held || analyst ? `<div class="bottom-space">${button('cancel','Cancel payment','primary full')}</div>` : `<div class="bottom-space">${state === 'nudge' || p.hold_until ? '<label class="checkbox-label"><input type="checkbox" id="confirm-warning"><span>I checked the warning and payment details.</span></label>' : ''}${button('continue','Continue')}</div>`}
     <div class="button-stack bottom-space">${button('inspect','View decision ↗','secondary full')}${button('edit','Edit payment details','link-button')}${!held && !analyst ? button('cancel','Cancel payment','link-button') : ''}</div></section>`;
@@ -132,13 +136,14 @@ function inspect() {
   const graphEvents=f.evidence.filter(e=>e.kind==='payment' && Math.max(e.event_at,e.available_at)<f.graph_cutoff);
   const pairs=[...new Map(graphEvents.map(e=>[`${e.sender}-${e.receiver}`,e])).values()];
   // Avoid rebuilding open details on every SSE heartbeat/notification.
-  if ($('#decision-inspector').dataset.review!==review.id) {
+  const cacheKey=review.id + ':' + (transfer?.id || '');
+  if ($('#decision-inspector').dataset.review!==cacheKey) {
     $('#decision-inspector').innerHTML=decisionExplorer(review,drawGraph(pairs,f),previousReview);
     if(transfer && transfer.review_id===review.id) {
       $('#decision-inspector').insertAdjacentHTML('afterbegin','<section class="panel"><h3>Ledger reconciliation</h3><div id="explorer-ledger">Loading…</div></section>');
       api(path(`ledger/${transfer.id}`)).then(rows=>{const el=$('#explorer-ledger'); if(el) el.textContent=rows.map(r=>`${r.account}: ${money(r.delta)}`).join(' / ')+` · net ${money(rows.reduce((sum,r)=>sum+r.delta,0))}`;}).catch(e=>notify(e.message,true));
     }
-    $('#decision-inspector').dataset.review=review.id;
+    $('#decision-inspector').dataset.review=cacheKey;
     $('#decision-inspector').querySelectorAll('details').forEach(d=>{
       const key=d.querySelector('summary')?.textContent.trim().split(' ')[0];
       if (key && f.values.hasOwnProperty(key)) d.id='feature-'+key;
@@ -157,8 +162,10 @@ function drawGraph(edges, snapshot) {
 }
 
 function connectStream() {
-  stream?.close(); events = [];
-  stream = new EventSource('/api/' + path('stream'));
+  stream?.close(); stream=null;
+  if(document.hidden || observeToken) return;
+  const cursor=events.length ? events.at(-1).sequence : 0;
+  stream = new EventSource('/api/' + path(`stream?after=${cursor}`));
   stream.onopen = () => { $('#stream-status').textContent = '● Connected'; $('#stream-status').className = 'connection live'; };
   stream.onerror = () => { $('#stream-status').textContent = 'Reconnecting…'; $('#stream-status').className = 'connection'; };
   stream.onmessage = async message => {
@@ -181,6 +188,7 @@ async function newWorld() {
   const value = Number($('#seed').value);
   if (!Number.isInteger(value) || value < 0 || value > 4294967295) throw new Error('Enter a seed between 0 and 4294967295.');
   world = await api('worlds', {seed:value, preset:$('#preset').value});
+  events=[];
   payment = review = transfer = null; recipient = world.default_recipient; screen = 'home';
   save(); connectStream(); render();
 }
@@ -317,6 +325,18 @@ async function start() {
   } catch(e) { app.innerHTML='<div class="card"><h1>Wallet unavailable</h1><p>Check that the local server and model artifacts are ready, then reload.</p></div>'; notify(e.message,true); }
 }
 window.addEventListener('pagehide', () => { stream?.close(); clearTimeout(observerTimer); });
+document.addEventListener('visibilitychange',async()=>{
+  if(document.hidden) {stream?.close();stream=null;return;}
+  if(!world || observeToken) return;
+  const id=world.id;
+  try {
+    const fresh=await api(`worlds/${id}`);
+    if(world.id!==id) return;
+    world=fresh;
+    if(['home','review','authorize','receipt'].includes(screen)) render();
+    connectStream();
+  } catch(e) {notify(e.message,true);}
+});
 start();
 
 $('#revoke-observer').addEventListener('click', () => guarded(async () => {

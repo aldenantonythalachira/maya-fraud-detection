@@ -1,68 +1,79 @@
 # MAYA
 
-Synthetic UPI scam-journey detector and interactive dummy wallet. The core uses
-past-only payment/recipient features, XGBoost, conformal prediction and a
-two-group intervention policy. No real payments or external fraud reports occur.
+A local synthetic payment wallet with an inspectable fraud-decision pipeline.
+Generate a history, enter a free-form dummy payment, inspect its actual model and
+policy result, and follow authorization through a balanced debit/credit ledger.
 
-## Interactive wallet (Python 3.12)
+## Run (Python 3.12)
+
+From the repository directory:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-test.txt
-.\.venv\Scripts\python.exe scripts/bootstrap_demo.py
+.\.venv\Scripts\python.exe -m pip install -r requirements-test.lock.txt
+.\.venv\Scripts\python.exe run_demo.py --bootstrap
+```
+
+Open the printed loopback URL, normally http://127.0.0.1:8000. Subsequent runs
+need only the last command. Use `--port 8002` if 8000 is occupied. Keep the
+terminal open; Ctrl+C stops the server. Restart an older running server to load
+backend changes. No real bank, payment rail, money or UPI PIN is involved.
+
+`--bootstrap` builds missing artifacts without replacing existing ones. To
+deliberately rebuild the updated tuning/calibration contract, back up existing
+artifacts and run `python scripts/bootstrap_demo.py`. Generated data, model JSON
+and databases stay ignored. Default database: `data/simulator-v2.sqlite`; stage-03
+v1 data is preserved. Never silently reuse an incompatible runtime database.
+
+## Explore
+
+- **Wallet:** recipient, amount, review, explicit dummy authorization, receipt and history.
+- **View decision:** correlated execution events, exact feature witnesses, actual model
+  contributions, policy groups, synthetic providers, replay and verification bundle.
+- **Console:** independent contact/analyst views and restricted simulator controls.
+  A controller key is printed to the server terminal; do not share it with payers.
+- **Recipient view:** scoped, expiring and revocable access to one recipient's credits.
+
+Every review calls the model. Presets generate inputs, not outcomes. SHAP uses
+the same selected trees as scoring and must reconstruct its score. A hold requires
+independent evidence groups. Timer expiry never transfers money automatically;
+fresh review, exact-review analyst approval where required, and payer confirmation
+are checked by the backend. Retries/restarts return one durable settlement.
+
+## Verification and evidence
+
+```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe src/policy.py --self-test
-.\.venv\Scripts\python.exe run_demo.py
+.\.venv\Scripts\python.exe scripts/evaluate_demo.py
+.\.venv\Scripts\python.exe scripts/evaluate_heldout.py
+.\.venv\Scripts\python.exe scripts/model_health.py
 ```
 
-Open http://127.0.0.1:8000. The wallet generates seeded histories, computes actual
-model decisions, records evidence and settles balanced dummy transfers. Open
-**How it works** for the live execution trace, feature lineage, graph, SHAP,
-replay, simulator clock and recipient view. No real money or UPI PIN is used.
+See [validation](docs/VALIDATION.md), [recorded evaluation](docs/EVALUATION_RESULTS.md)
+and the [deck checklist](docs/DECK_CHECKLIST.md). Software tests demonstrate local
+behavior, not detection accuracy. Current rebuilt smoke artifacts show 92.10%
+marginal test coverage but only 35.48% recall at the tuning-selected operating
+threshold. The recall gate fails. Unseen-type smoke samples are weak or
+inconclusive. Fairness and bank-load performance are not established.
 
-See [the demo runbook](docs/DEMO_RUNBOOK.md) and
-[version recovery](docs/VERSION_RECOVERY.md). Use `scripts/versions.py list`
-to see published `maya/*` checkpoints; restore creates a new branch and refuses
-uncommitted local edits. Both implementation progress and limitations are in
-`docs/WORK_LOG.md`.
+Voice, a trained multilingual stage model, private federated training, real bank
+providers, signed evidence and production identity/security remain separate
+milestones. The existing graph convention propagates outward from reported
+accounts; it is not the deck's directed distance to reports. These limits are
+explicit in the explorer, contracts and checklist. The legacy Streamlit fixture
+demo remains at `streamlit run ui/app.py` and does not establish live wallet behavior.
 
-On macOS/Linux use `.venv/bin/python` for the interpreter. The core requirements
-exclude the optional PyTorch/GNN experiment; `requirements.txt` retains the full
-experimental dependencies.
+## Handoff and recovery
 
-## Rebuild a small synthetic baseline
+Read the [runbook](docs/DEMO_RUNBOOK.md), [architecture](docs/ARCHITECTURE.md),
+[feature contract](docs/FEATURE_CONTRACT.md), [threat model](docs/THREAT_MODEL.md)
+and [model lifecycle](docs/MODEL_LIFECYCLE.md). Native ES modules/CSS are served by
+FastAPI; no Node build or second frontend server is required. On Linux/macOS use
+`.venv/bin/python`. Full experimental dependencies remain in `requirements.txt`.
 
-Run from the repository root. These are smoke artifacts, not the submitted B4
-experiment or evidence of real-world accuracy.
-
-```text
-python src/journey_generator.py --smoke --out-dir data
-python src/features.py --days 30
-python src/train_xgb.py
-python src/conformal.py
-```
-
-Generated CSVs, model JSON and simulator databases are ignored by Git. Bootstrap
-replaces model/data files; skip it to preserve exact replay of existing reviews.
-Validate generator output
-(`campaign_split_violations=0`, `ref_integrity=True`) and feature output (all
-sample maximum differences are zero). The old UI pins scenario prediction sets;
-live model scores shown alongside them do not drive those scenario decisions.
-That legacy UI remains at `streamlit run ui/app.py`. The new wallet has no pinned
-scenario verdicts. Its graph features preserve the baseline's report-outward
-traversal convention; this is explicitly labeled rather than silently changed.
-
-## Team workflow
-
-Branch from the current shared base, implement one reviewable stage, run its
-checks, and open a pull request. Do not push directly to `main`. Merge only after
-team review. Keep generated datasets, model files and credentials out of commits.
-See `docs/WORK_LOG.md` for repository decisions and validation.
-
-## Finale direction
-
-Preserve the baseline detector; add a simulated payment review, narrow
-claim-to-operation comparison with abstention, review invalidation when payment
-details change, and immutable evidence replay. See the planning log for scope.
-All holds require independent signal groups, including at least one history or
-recipient group; a scam-only prediction does not override that requirement.
+Recovery instructions are in [VERSION_RECOVERY.md](docs/VERSION_RECOVERY.md).
+`python scripts/versions.py list` lists checkpoints; restore creates a new branch
+and refuses dirty work. Source checkpoints do not restore ignored model/database
+files. Keep a complete matching runtime backup. Work stays on feature branches
+and draft PRs; no merge or default-branch rewrite is part of this delivery.

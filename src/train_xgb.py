@@ -19,7 +19,7 @@ import numpy as np
 import xgboost as xgb
 from sklearn.metrics import average_precision_score, roc_auc_score, roc_curve
 
-from risk_common import FEATURE_COLUMNS, TARGET, load_features
+from risk_common import FEATURE_COLUMNS, TARGET, load_features, validation_partitions
 
 
 def recall_at_fpr(y_true, score, target_fpr, threshold):
@@ -38,9 +38,9 @@ def recall_at_fpr(y_true, score, target_fpr, threshold):
 
 def run(args) -> None:
     t0 = time.time()
-    df = load_features(args.features)
+    df = load_features(args.features, FEATURE_COLUMNS + ["day"])
     tr = df[df["split"] == "train"]
-    va = df[df["split"] == "val"]
+    va, calibration = validation_partitions(df)
     te = df[df["split"] == "test"]
     if args.smoke:
         tr = tr.sample(n=min(100_000, len(tr)), random_state=1)
@@ -66,7 +66,7 @@ def run(args) -> None:
         colsample_bytree=args.colsample,
         scale_pos_weight=spw,
         random_state=args.seed,
-        n_jobs=-1,
+        n_jobs=1,
         early_stopping_rounds=40,
     )
     model.fit(Xtr, ytr, eval_set=[(Xva, yva)], verbose=False)
@@ -79,6 +79,9 @@ def run(args) -> None:
     _, rec_te_only, fpr_te_only = recall_at_fpr(yte, p_te, 0.01, None)
 
     metrics = {
+        "validation_contract": "chronological whole-day tuning then calibration; test untouched",
+        "tuning_day_range": [int(va.day.min()), int(va.day.max())],
+        "calibration_day_range": [int(calibration.day.min()), int(calibration.day.max())],
         "scale_pos_weight": float(spw),
         "train_rows": int(len(tr)), "train_pos": pos,
         "val_auroc": float(roc_auc_score(yva, p_va)),

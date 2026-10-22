@@ -117,7 +117,8 @@ def create_app(service, controller_key=None, demo_docs=False):
         response.headers["Cache-Control"] = "no-store"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "no-referrer"
-        response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors 'none'; base-uri 'none'"
+        ancestors = "'self'" if demo_docs and request.url.path == "/qa/wallet" else "'none'"
+        response.headers["Content-Security-Policy"] = f"default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self' data:; frame-ancestors {ancestors}; base-uri 'none'"
         return response
 
     @app.exception_handler(ValueError)
@@ -261,7 +262,11 @@ def create_app(service, controller_key=None, demo_docs=False):
         async def messages():
             nonlocal cursor
             while not await request.is_disconnected():
-                for event in service.events(wid, owner, cursor):
+                try:
+                    committed = service.events(wid, owner, cursor)
+                except ValueError:
+                    return  # A payer may delete this synthetic world while streaming.
+                for event in committed:
                     cursor = event["sequence"]
                     yield f"id: {cursor}\ndata: {json.dumps(event)}\n\n"
                 yield ": keepalive\n\n"
@@ -279,6 +284,11 @@ def create_app(service, controller_key=None, demo_docs=False):
     @app.get("/console")
     def console():
         return FileResponse(web / "console.html")
+
+    if demo_docs:
+        @app.get("/qa/wallet")
+        def qa_wallet():
+            return FileResponse(web / "index.html")
 
     @app.get("/")
     @app.get("/recipient")
