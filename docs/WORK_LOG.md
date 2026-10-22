@@ -69,3 +69,16 @@
 - Stage 01 checkpoint contains the review service, claim grammar, debugger,
   regression tests, dependency snapshot and execution plan. Wallet settlement
   remains a later stage, not a claim of this checkpoint.
+
+### Stage 02 - Generated worlds and feature parity
+
+- Stage 01 pushed as 031321b with tag maya/01-payment-review; draft PR #2:
+  https://github.com/aldenantonythalachira/maya-fraud-detection/pull/2.
+- Added seeded account/payment/report generation and exact live reuse of batch
+  endpoint/combine logic, preserving missing history instead of invented zeroes.
+- Found an important legacy convention: batch graph distances propagate outward
+  from reported accounts, not toward them. Preserved it for existing weights,
+  labeled the convention, and test the previous-UTC-day report/edge snapshot.
+  Correcting direction requires a separately versioned retrain, not a silent fix.
+- 25 tests pass, including independent brute-force feature comparison across
+  five random worlds, seed replay, probe windows and future-evidence exclusion.
