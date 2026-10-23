@@ -19,7 +19,7 @@ import numpy as np
 import xgboost as xgb
 from sklearn.metrics import average_precision_score, roc_auc_score, roc_curve
 
-from risk_common import FEATURE_COLUMNS, TARGET, load_features
+from risk_common import FEATURE_COLUMNS, SMOKE_FEATURES, SMOKE_MODEL, TARGET, load_features
 
 
 def recall_at_fpr(y_true, score, target_fpr, threshold):
@@ -117,7 +117,8 @@ def run(args) -> None:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description="Train the XGBoost risk model.")
-    ap.add_argument("--features", default="data/features.csv")
+    ap.add_argument("--features", default=None,
+                    help="default: data/features.csv (data/smoke/features.csv with --smoke)")
     ap.add_argument("--model-out", default="models/xgb_model.json")
     ap.add_argument("--meta-out", default="models/model_meta.json")
     ap.add_argument("--n-estimators", type=int, default=400)
@@ -128,8 +129,10 @@ def main(argv=None) -> None:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--smoke", action="store_true")
     args = ap.parse_args(argv)
+    if args.features is None:
+        args.features = SMOKE_FEATURES if args.smoke else "data/features.csv"
     if args.smoke:
-        args.model_out = "models/xgb_model_smoke.json"
+        args.model_out = SMOKE_MODEL
         args.meta_out = "models/model_meta_smoke.json"
     run(args)
 

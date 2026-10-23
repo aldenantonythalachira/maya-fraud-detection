@@ -7,6 +7,7 @@ marginal (1-alpha) coverage guarantee. The prediction set is one of:
 Saves models/conformal.json with q-hat. Run:
     python3 src/conformal.py
     python3 src/conformal.py --txn-id 12345
+    python3 src/conformal.py --smoke   (smoke model + data/smoke/features.csv)
 """
 
 from __future__ import annotations
@@ -19,7 +20,9 @@ from pathlib import Path
 import numpy as np
 import xgboost as xgb
 
-from risk_common import FEATURE_COLUMNS, TARGET, load_features
+from risk_common import (
+    FEATURE_COLUMNS, SMOKE_CONFORMAL, SMOKE_FEATURES, SMOKE_MODEL, TARGET, load_features,
+)
 
 SET_FINE, SET_SCAM, SET_UNSURE = 0, 1, 2
 SET_NAMES = {SET_FINE: "{fine}", SET_SCAM: "{scam}", SET_UNSURE: "{fine, scam}"}
@@ -113,7 +116,13 @@ def main(argv=None) -> None:
     ap.add_argument("--out", default="models/conformal.json")
     ap.add_argument("--alpha", type=float, default=0.10)
     ap.add_argument("--txn-id", type=int, default=None)
+    ap.add_argument("--smoke", action="store_true",
+                    help="calibrate the train_xgb --smoke model on data/smoke/features.csv")
     args = ap.parse_args(argv)
+    if args.smoke:
+        args.model = SMOKE_MODEL
+        args.features = SMOKE_FEATURES
+        args.out = SMOKE_CONFORMAL
     run(args)
 
 

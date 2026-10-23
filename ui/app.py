@@ -390,28 +390,38 @@ with tab_demo:
                             c2.warning(f"MuleHunter.AI: {mh}")
                         else:
                             c2.success(f"MuleHunter.AI: {mh}")
-                        a1, a2 = st.columns(2)
-                        if a1.button("Approve Release", width="stretch"):
-                            st.session_state.analyst_action = "approved"
-                        if a2.button("File 1930 Report & Block", width="stretch"):
-                            st.session_state.analyst_action = "reported"
+                        # The hold resolves exactly once: analyst approve / report, or the
+                        # 60-min auto-release, whichever comes first.
                         if st.session_state.analyst_action == "approved":
                             st.success(f"Release approved — payment released to {sc['payee']}.")
                         elif st.session_state.analyst_action == "reported":
                             rep = file_1930_report(sc["txn_id"], sc["amount"])
                             st.success(f"Report filed with NCRP (ref {rep['ref_id']}). Account blocked.")
+                        elif st.session_state.released:
+                            st.info("Auto-released before analyst review — no action available.")
+                        else:
+                            a1, a2 = st.columns(2)
+                            if a1.button("Approve Release", width="stretch"):
+                                st.session_state.analyst_action = "approved"
+                                st.rerun()
+                            if a2.button("File 1930 Report & Block", width="stretch"):
+                                st.session_state.analyst_action = "reported"
+                                st.rerun()
                 if sc["key"] == "police":
                     st.error(
                         "📣 **Priya Alerted** — Maya silently notified your trusted contact "
                         "**Priya** and flagged this payment to the fraud desk. Screen-sharing "
                         "during a payment demand is a classic 'digital arrest' pattern."
                     )
-                if not st.session_state.released:
-                    if st.button("⏭ Advance 60 min (demo)", width="stretch"):
-                        st.session_state.released = True
-                        st.rerun()
-                else:
+                if st.session_state.analyst_action == "reported":
+                    st.info("Auto-release cancelled — funds blocked after the 1930 report.")
+                elif st.session_state.analyst_action == "approved":
+                    pass  # already released by the analyst
+                elif st.session_state.released:
                     st.success("Auto-released after 60 minutes — payment sent.")
+                elif st.button("⏭ Advance 60 min (demo)", width="stretch"):
+                    st.session_state.released = True
+                    st.rerun()
 
     with right:
         st.subheader("🧮 Judge view")

@@ -13,7 +13,7 @@ strictly past-only, time-aware fraud features for every transaction:
 Each feature is computed for both endpoints (sender and receiver) and then
 combined as the more anomalous value. Output: data/features.csv with is_scam.
 
-Run:  python3 src/features.py --smoke
+Run:  python3 src/features.py --smoke   (reads/writes data/smoke/)
       python3 src/features.py
 """
 
@@ -26,6 +26,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+SMOKE_DIR = "data/smoke"  # written by journey_generator.py --smoke
 
 DAY = 86400
 W7 = 7 * DAY
@@ -365,19 +367,21 @@ def run(args) -> None:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description="Build past-only fraud features.")
-    ap.add_argument("--txns", default="data/transactions.csv")
-    ap.add_argument("--edges", default="data/graph_edges.csv")
-    ap.add_argument("--labels", default="data/labels.csv")
-    ap.add_argument("--out", default="data/features.csv")
-    ap.add_argument("--days", type=int, default=120)
-    ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--txns", default=None, help="default: <data dir>/transactions.csv")
+    ap.add_argument("--edges", default=None, help="default: <data dir>/graph_edges.csv")
+    ap.add_argument("--labels", default=None, help="default: <data dir>/labels.csv")
+    ap.add_argument("--out", default=None, help="default: <data dir>/features.csv")
+    ap.add_argument("--days", type=int, default=None, help="default: 120 (30 with --smoke)")
+    ap.add_argument("--smoke", action="store_true",
+                    help="use data/smoke/ (from journey_generator.py --smoke) instead of data/")
     args = ap.parse_args(argv)
-    if args.smoke:
-        args.txns = "/tmp/opencode/maya_smoke/transactions.csv"
-        args.edges = "/tmp/opencode/maya_smoke/graph_edges.csv"
-        args.labels = "/tmp/opencode/maya_smoke/labels.csv"
-        args.out = "/tmp/opencode/maya_smoke/features.csv"
-        args.days = 30
+    data_dir = Path(SMOKE_DIR if args.smoke else "data")
+    args.txns = args.txns or str(data_dir / "transactions.csv")
+    args.edges = args.edges or str(data_dir / "graph_edges.csv")
+    args.labels = args.labels or str(data_dir / "labels.csv")
+    args.out = args.out or str(data_dir / "features.csv")
+    if args.days is None:
+        args.days = 30 if args.smoke else 120
     run(args)
 
 

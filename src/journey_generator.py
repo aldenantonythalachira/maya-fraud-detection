@@ -6,7 +6,7 @@ routed through layered mule networks. Emits three datasets to data/:
     transactions.csv, graph_edges.csv, labels.csv
 
 Split by contiguous day blocks (train/val/test) to prevent temporal leakage.
-Run:  python3 src/journey_generator.py --smoke
+Run:  python3 src/journey_generator.py --smoke   (writes to data/smoke/)
       python3 src/journey_generator.py
 """
 
@@ -22,6 +22,8 @@ from pathlib import Path
 import networkx as nx
 import numpy as np
 import pandas as pd
+
+SMOKE_DIR = "data/smoke"  # --smoke output; features.py --smoke reads it
 
 CATEGORIES = [
     "salary", "rent", "wedding", "p2p", "merchant",
@@ -577,14 +579,16 @@ def attach_day_split(cfg: Config, tx: pd.DataFrame) -> np.ndarray:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description="Generate synthetic UPI scam-journey data.")
-    ap.add_argument("--out-dir", default="data")
+    ap.add_argument("--out-dir", default=None,
+                    help="default: data/ (or data/smoke/ with --smoke)")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--users", type=int, default=None)
     ap.add_argument("--days", type=int, default=None)
     ap.add_argument("--smoke", action="store_true")
     args = ap.parse_args(argv)
 
-    cfg = Config(seed=args.seed, out_dir=args.out_dir)
+    out_dir = args.out_dir or (SMOKE_DIR if args.smoke else "data")
+    cfg = Config(seed=args.seed, out_dir=out_dir)
     if args.smoke:
         cfg = replace(cfg, smoke=True).resolved()
     if args.users is not None:

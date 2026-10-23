@@ -19,6 +19,12 @@ FEATURE_COLUMNS = [
 ]
 
 TARGET = "is_scam"
+
+# --smoke artifacts (data from journey_generator/features --smoke, model from
+# train_xgb --smoke); kept separate so they never overwrite the full-run files.
+SMOKE_FEATURES = "data/smoke/features.csv"
+SMOKE_MODEL = "models/xgb_model_smoke.json"
+SMOKE_CONFORMAL = "models/conformal_smoke.json"
 SPLITS = ("train", "val", "test")
 
 _BASE_REASONS = {

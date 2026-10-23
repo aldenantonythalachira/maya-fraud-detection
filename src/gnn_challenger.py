@@ -4,7 +4,7 @@ The Maya PDF (p. 15) floats a GNN challenger that reasons over the *graph* of
 accounts rather than per-transaction features. This script builds that
 challenger: a 2-layer GraphSAGE node classifier that predicts whether an
 account is a mule (`labels.is_mule`), then prints the verdict table against the
-XGBoost champion and concludes that we keep XGBoost in the 150 ms hot path.
+XGBoost champion with a verdict derived from the measured AUROC and latency.
 
 Run:
     python3 src/gnn_challenger.py --smoke       # 3 epochs, fast sanity check
@@ -32,6 +32,7 @@ from torch_geometric.utils import to_undirected
 from sklearn.metrics import roc_auc_score
 
 CHAMPION_LATENCY_MS = 150.0  # per-payment SLO from the spec
+GNN_USEFUL_AUROC = 0.70  # below this the challenger has not learned mule-ness
 
 
 class GraphSAGE(torch.nn.Module):
@@ -176,9 +177,39 @@ def print_table(champion_auroc: float, gnn_auroc: float | None, gnn_latency_ms: 
     print("neighbourhood structure (victim -> entry mule -> mid mule -> aggregator")
     print("chains) that the per-transaction features only approximate via d_R.")
     print()
-    print("Verdict: the GNN is slightly better at surfacing hidden multi-hop mule")
-    print("networks, but it needs the whole graph resident at inference time, so it")
-    print(f"cannot meet the {CHAMPION_LATENCY_MS:.0f} ms per-payment SLO. We kept XGBoost.")
+    for line in verdict_lines(gnn_auroc, gnn_latency_ms):
+        print(line)
+
+
+def verdict_lines(gnn_auroc: float | None, gnn_latency_ms: float) -> list[str]:
+    """Verdict derived from the measured GNN numbers (never hardcoded).
+
+    The two AUROCs score different targets, so the GNN is judged on whether it
+    learned a usable account-level mule signal and whether it fits the SLO --
+    not on beating the champion's txn-level number.
+    """
+    if gnn_auroc is None:
+        quality = "the GNN could not be scored (test split has a single class)."
+    elif gnn_auroc < GNN_USEFUL_AUROC:
+        quality = (f"the GNN did not learn a usable mule signal (test AUROC "
+                   f"{gnn_auroc:.4f} < {GNN_USEFUL_AUROC:.2f}).")
+    else:
+        quality = (f"the GNN flags mule accounts well (test AUROC {gnn_auroc:.4f} on "
+                   f"is_mule), a target the champion does not score, so it complements "
+                   f"rather than replaces XGBoost.")
+    slo = CHAMPION_LATENCY_MS
+    if gnn_latency_ms > slo:
+        latency = (f"Its full-graph forward pass takes {gnn_latency_ms:.1f} ms, over the "
+                   f"{slo:.0f} ms per-payment SLO.")
+    else:
+        latency = (f"Its full-graph forward pass ({gnn_latency_ms:.1f} ms) fits the "
+                   f"{slo:.0f} ms SLO on this graph, but needs the whole graph resident "
+                   f"at inference.")
+    return [
+        f"Verdict: {quality}",
+        latency,
+        "It does not score individual payments, so XGBoost stays in the per-payment hot path.",
+    ]
 
 
 def main(argv=None) -> int:

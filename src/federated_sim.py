@@ -144,16 +144,30 @@ def run(args) -> int:
     print(f"{'Bank B (local)':<18}{auc_b:>9.4f}{rec_b:>15.4f}{thr_b:>10.4f}{fpr_b:>9.4f}")
     print(f"{'Global (FedAvg)':<18}{auc_g:>9.4f}{rec_g:>15.4f}{thr_g:>10.4f}{fpr_g:>9.4f}")
 
-    win_auc = auc_g >= max(auc_a, auc_b)
-    win_rec = rec_g >= max(rec_a, rec_b)
-    print(f"[federated] Global vs best local -> AUROC {'WIN' if win_auc else 'lose'} "
+    res_auc = outcome(auc_g, max(auc_a, auc_b))
+    res_rec = outcome(rec_g, max(rec_a, rec_b))
+    print(f"[federated] Global vs best local -> AUROC {res_auc} "
           f"({auc_g:.4f} vs {max(auc_a, auc_b):.4f}), "
-          f"recall {'WIN' if win_rec else 'lose'} ({rec_g:.4f} vs {max(rec_a, rec_b):.4f})")
-    print("[federated] conclusion: the FedAvg global model catches more scams than "
-          "either bank alone, without any bank sharing raw customer data "
-          "(only averaged predictions leave each bank).")
+          f"recall {res_rec} ({rec_g:.4f} vs {max(rec_a, rec_b):.4f})")
+    if res_rec == "WIN":
+        verdict = "the FedAvg global model catches more scams than either bank alone"
+    elif res_rec == "TIE":
+        verdict = "the FedAvg global model catches as many scams as the best bank alone"
+    else:
+        verdict = "the FedAvg global model catches fewer scams than the best bank alone"
+    print(f"[federated] conclusion: {verdict}, without any bank sharing raw customer "
+          "data (only model outputs leave each bank).")
     print(f"[federated] done in {time.time() - t0:.1f}s")
     return 0
+
+
+def outcome(global_score: float, best_local: float, tol: float = 1e-4) -> str:
+    """WIN / TIE / LOSE of the global model vs the best local, at printed precision."""
+    if global_score > best_local + tol:
+        return "WIN"
+    if global_score < best_local - tol:
+        return "LOSE"
+    return "TIE"
 
 
 def main(argv=None) -> int:

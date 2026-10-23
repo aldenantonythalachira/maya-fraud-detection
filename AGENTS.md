@@ -34,16 +34,23 @@ formatter/test framework yet.
 - Generate data (writes 3 CSVs into `data/`):
   - `python3 src/journey_generator.py` (full: 20k users / 120 days, ~28s)
   - `python3 src/journey_generator.py --smoke` (600 users / 30 days, <1s; use
-    this to iterate)
+    this to iterate). Writes to `data/smoke/` so it never clobbers the full data.
   - Flags: `--out-dir`, `--seed`, `--users N`, `--days N`.
 - Build Phase 2 features (`data/features.csv`):
   - `python3 src/features.py` (full: ~3.06M rows, ~2.5 min)
-  - `python3 src/features.py --smoke` (uses `/tmp/opencode/maya_smoke/*`, ~5s)
-  - Flags: `--txns`, `--edges`, `--labels`, `--out`, `--days`. Regenerating the
-    dataset requires re-running features afterwards.
+  - `python3 src/features.py --smoke` (reads/writes `data/smoke/*`, 30 days, ~5s)
+  - Flags: `--txns`, `--edges`, `--labels`, `--out`, `--days` (explicit flags
+    override the `--smoke` defaults). Regenerating the dataset requires
+    re-running features afterwards.
 - Phase 3 risk stack (reads `data/features.csv`, writes `models/`):
-  - `python3 src/train_xgb.py` (~45s; `--smoke` for a fast 100k-row subset)
-  - `python3 src/conformal.py` (calibrate on val; `--txn-id N` to score one txn)
+  - `python3 src/train_xgb.py` (~45s; `--smoke` trains on
+    `data/smoke/features.csv` and writes `models/*_smoke.json`)
+  - `python3 src/conformal.py` (calibrate on val; `--txn-id N` to score one txn;
+    `--smoke` uses the smoke model and writes `models/conformal_smoke.json`)
+  - Smoke chain (end to end, ~6s): `journey_generator.py --smoke` ->
+    `features.py --smoke` -> `train_xgb.py --smoke` -> `conformal.py --smoke`.
+    Smoke paths live in `risk_common.SMOKE_*`; the UI/policy still load the full
+    `models/xgb_model.json` + `conformal.json`.
   - `python3 src/reasons.py --txn-id N` (SHAP top-3; `--demo K` for top-risk txns)
   - Flag paths are `--features/--model/--model-out/--meta-out/--out`.
 - Phase 4 action engine (reads `models/` + `data/features.csv`):
@@ -168,8 +175,10 @@ formatter/test framework yet.
 - The verdict table compares **different targets** on purpose: champion
   `test_auroc` (0.9983) is txn-level `is_scam`, the GNN AUROC is account-level
   `is_mule`; the script labels both and does not roll the champion up to accounts.
-  Conclusion: GNN slightly better at hidden multi-hop mule networks, but needs the
-  whole graph resident at inference, so XGBoost stays in the 150 ms hot path.
+  The printed verdict is computed by `verdict_lines()` from the measured GNN
+  AUROC (usable iff >= `GNN_USEFUL_AUROC` = 0.70) and forward latency vs the
+  150 ms SLO; it never claims the GNN beats the champion (different targets).
+  XGBoost always stays in the per-payment hot path (the GNN scores accounts).
 
 ## Phase 8 federated learning simulation (non-obvious)
 
@@ -186,8 +195,10 @@ formatter/test framework yet.
   averaging is ill-defined when the trees don't share structure.
 - Evaluates both locals and the global on the **shared** test split (both banks):
   AUROC + recall@1%FPR (threshold chosen at 1% FPR on each model's own val; the
-  global uses the combined val). The global beats both locals because each local
-  is diluted by the other bank's unseen customers.
+  global uses the combined val). The global beats both locals on the full run
+  because each local is diluted by the other bank's unseen customers. The
+  comparison is WIN / TIE / LOSE via `outcome()` (tolerance 1e-4, i.e. printed
+  precision), and the conclusion line follows the recall outcome.
 - `--smoke` row-samples train/val/test (100k/20k/20k) for a fast check; the smoke
   test has ~13 positives so its AUROC/recall are high-variance — the full run is
   the real number.
@@ -262,6 +273,9 @@ formatter/test framework yet.
   18-col model.
 - Hold shows a static 60-min auto-release badge plus an "Advance 60 min (demo)"
   button (no live countdown / no auto-refresh).
+- A hold resolves **exactly once**: analyst Approve (released), analyst Report
+  (blocked, auto-release cancelled), or Advance 60 min (auto-released, analyst
+  actions closed) — whichever comes first hides the other controls.
 
 ## Layout
 
