@@ -1,7 +1,8 @@
 """Phase 3: split-conformal wrapper around the XGBoost risk model.
 
-LAC (least-ambiguous-set) nonconformity scores calibrated on the val split give a
-marginal (1-alpha) coverage guarantee. The prediction set is one of:
+LAC (least-ambiguous-set) nonconformity scores use separate calibration days.
+Finite-sample marginal coverage requires exchangeability; temporal drift can
+break that assumption. Empirical test coverage must be reported. Sets are:
     {fine}, {scam}, or {fine, scam} ("unsure")   -- never empty.
 
 Saves models/conformal.json with q-hat. Run:
@@ -19,13 +20,15 @@ from pathlib import Path
 import numpy as np
 import xgboost as xgb
 
-from risk_common import FEATURE_COLUMNS, TARGET, load_features
+from risk_common import FEATURE_COLUMNS, TARGET, load_features, validation_partitions
 
 SET_FINE, SET_SCAM, SET_UNSURE = 0, 1, 2
 SET_NAMES = {SET_FINE: "{fine}", SET_SCAM: "{scam}", SET_UNSURE: "{fine, scam}"}
 
 
 def fit_qhat(scores: np.ndarray, alpha: float) -> float:
+    if not 0 < alpha < 1 or not len(scores) or not np.isfinite(scores).all():
+        raise ValueError("Calibration requires finite nonempty scores and alpha in (0,1)")
     s = np.sort(scores)
     n = s.size
     k = min(n, int(math.ceil((n + 1) * (1.0 - alpha))))
@@ -58,15 +61,21 @@ def evaluate(sets: np.ndarray, y: np.ndarray) -> dict:
         "set_distribution": dist,
         "scam_detection_rate": float(scam_eff[pos].mean()) if pos.any() else 0.0,
         "avg_set_size": float(np.where(sets == SET_UNSURE, 2, 1).mean()),
+        "rows": int(len(y)),
+        "scam_rows": int(pos.sum()),
+        "benign_rows": int((~pos).sum()),
+        "scam_coverage": float(covered[pos].mean()) if pos.any() else None,
+        "benign_coverage": float(covered[~pos].mean()) if (~pos).any() else None,
     }
 
 
 def run(args) -> None:
-    model = xgb.XGBClassifier()
+    model = xgb.XGBClassifier(n_jobs=1)
     model.load_model(args.model)
-    df = load_features(args.features)
+    model.set_params(n_jobs=1)
+    df = load_features(args.features, FEATURE_COLUMNS + ["day"])
 
-    va = df[df["split"] == "val"]
+    _, va = validation_partitions(df)
     te = df[df["split"] == "test"]
     p_va = model.predict_proba(va[FEATURE_COLUMNS])[:, 1]
     p_te = model.predict_proba(te[FEATURE_COLUMNS])[:, 1]
@@ -85,6 +94,9 @@ def run(args) -> None:
         "qhat": qhat,
         "score": "lac: 1 - p(true class)",
         "calibration_rows": int(len(va)),
+        "calibration_days": [int(va.day.min()), int(va.day.max())],
+        "method": "marginal LAC; class-conditional guarantee not established",
+        "split_contract": "later validation days, disjoint from tuning; test unchanged",
         "test": rep,
     }
     out = Path(args.out)

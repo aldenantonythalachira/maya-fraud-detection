@@ -1,88 +1,94 @@
-# Interactive MAYA wallet
+# MAYA local demo runbook
 
-## Start from the repository directory
+## Start
+
+Use PowerShell from the repository root:
 
 ```powershell
+Set-Location 'C:\Users\ashrith\Downloads\Projects\raksham\maya-fraud-detection'
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements-test.txt
-.\.venv\Scripts\python.exe scripts/bootstrap_demo.py
-.\.venv\Scripts\python.exe run_demo.py
+.\.venv\Scripts\python.exe run_demo.py --bootstrap
 ```
 
-Open http://127.0.0.1:8000. Use `--port 8001` if 8000 is busy. No real bank,
-payment provider, API key or UPI PIN is used. Keep this server on loopback.
-Default database: data/simulator-v1.sqlite. Override `--database` for an isolated
-demo or code-version change. Bootstrap regenerates model/data files; skip it
-when keeping an existing model for exact review replay.
+Once installed, only the final command is needed. `--bootstrap` builds missing
+model/calibration files; it preserves existing files. To rebuild the changed
+training/calibration contract deliberately, back up models then run
+`python scripts/bootstrap_demo.py`. The new default database is
+`data/simulator-v2.sqlite`; previous v1 data is preserved. Use `--port 8002` if
+8000 is occupied, and `--database data/simulator-my-demo.sqlite` for isolation.
 
-The browser uses native ES modules and CSS, served by the same Python API.
-This intentionally simplifies the proposed React/Vite stack: one server, no
-Node build or second dev port, and no duplicate decision logic. FastAPI owns
-validation and state. Legacy Streamlit demos remain available unchanged.
+Open the printed loopback wallet URL. Keep the terminal open. It prints a fresh
+controller key for `/console`; keep that key out of payer screens and recordings.
+No real payments or PINs are used. Missing/invalid models leave the wallet in a
+blocked degraded state; bootstrap and restart. `--demo-docs` explicitly enables
+the otherwise-disabled API documentation. Ctrl+C stops the server.
 
-## Demonstrate the flow
+## Five-minute demonstration
 
-1. Pay Amma a custom amount including paise. Review, explicitly confirm any
-   warning, then press **Authorize dummy payment**. Compare the receipt's debit,
-   credit and balances. Repeated requests/reloads do not duplicate a transfer.
-2. **How it works** opens world controls and the actual event trace. Choose
-   investment, seed 42, and generate a world. Pay R K Traders INR 20,000. With
-   current smoke artifacts this holds, but generation and inference always run;
-   the preset does not prescribe the action.
-3. Inspect feature windows, endpoint columns, tree contributions, graph edges and
-   snapshot versions. SHAP explains the model; payer text is separately labeled
-   evidence templates. Unsupported context abstains. No trained stage model is claimed.
-4. Edit amount, review again, then **Try old review after an edit**. The service
-   rejects the old revision. **Recompute original snapshot** verifies model and
-   policy against saved inputs and matching versions.
-5. **Delay reports** creates a separate evaluation linked to the original. With
-   current seed/artifacts the hold becomes a nudge as recipient evidence disappears.
-   The original review and active hold on the original intent remain intact.
-6. Open recipient view to see committed incoming transfers. This local observer
-   link exposes dummy accounts, balances and transfers; it cannot execute a payment.
-   It polls actual state every two seconds; no authorization is needed to receive.
-7. Advance the paused virtual clock to test expiry. A hold never auto-sends.
-   Above INR 100,000, obtain a fresh review, record simulated analyst approval
-   for that revision, then explicitly authorize after the timer. Priya's in-app
-   inbox deduplicates held-payment alerts per world/payer/simulated day.
+1. Enter a recipient and arbitrary amount, including paise. Review the actual
+   outcome, confirm a warning if requested, then **Confirm demo payment**. Do not
+   promise a benign example will release without warning. Show the receipt.
+2. Open **View decision**: current input, evidence cutoff, signal groups, feature
+   witnesses, exact tree contributions, actual graph and saved versions. Click a
+   contribution to expand its feature's source events. Download a verification bundle.
+3. In the explorer choose investment history and seed 42, visibly a saved
+   regression seed. Try INR 125,000 to R K Traders. The recorded current artifact
+   run holds, but there is no preset outcome override. Show what actually happens.
+4. Enable trusted-contact sharing on wallet home before creating the hold. In a
+   separate `/console`, authenticate as controller with the terminal key. Issue
+   a contact link and open its minimal inbox. Acknowledgment is not authorization.
+5. Issue an analyst link. The payer has no analyst approval control. Advance
+   virtual time one hour in the controller console, obtain a fresh payer review,
+   refresh the analyst case, approve that exact review and explicitly confirm as
+   payer. Approval for a previous review is rejected; expiry never sends money.
+6. Open **Recipient view** from the receipt to see only that recipient's matching
+   incoming transfers. Reload works until the 30-minute link expires. Payer can
+   revoke all recipient links. No observer can execute or view other recipients.
+7. For counterfactuals, paste the original review ID in the controller console
+   and choose **Evaluate delayed reports separately**. This forks a new world
+   from the saved eligible evidence, leaving the original world/review/hold
+   unchanged. Open the separate wallet in the original payer browser session.
+8. Edit a pending payment and review again; **Challenge a superseded review**
+   exercises server rejection. Recompute/download never rewrites the original.
+9. Set a synthetic provider delayed/unavailable/error; obtain a fresh review and
+   inspect the envelope. Unknown never becomes a clean verdict. Synthetic NCRP
+   filing needs independent analyst access and available mock provider state.
+10. Reload after settlement, or stop/restart using the same database, and show
+    the same receipt/transfer ID. Create a new random seed to demonstrate variation.
 
-## Verification
+The virtual clock is deliberately paused. Role access expiry uses real time;
+virtual advance cannot extend credentials. Holds do not reserve funds. Insufficient
+funds at settlement rejects safely. A new review after analyst approval needs a
+new approval even if amount/recipient are unchanged.
+
+## Verification commands
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe src/policy.py --self-test
 .\.venv\Scripts\python.exe scripts/evaluate_demo.py
-.\.venv\Scripts\python.exe scripts/versions.py list
+.\.venv\Scripts\python.exe scripts/evaluate_heldout.py
+.\.venv\Scripts\python.exe scripts/model_health.py
+.\.venv\Scripts\python.exe scripts/verify_bundle.py 'C:\path\downloaded-bundle.json' --recompute
 ```
 
-CI rebuilds a small model before tests so actual-model integration is not silently
-skipped. The evaluation JSON is a three-seed behavioral audit, not a held-out
-accuracy benchmark. Tests cover independent feature-oracle comparison, evidence
-timing, settlement conservation, competing connections, restart/retry, API/session
-boundaries, replay and safe code restore.
+`evaluate_demo.py` is behavioral replay, not accuracy. `evaluate_heldout.py` trains
+separate benchmark models and compares decisions on the same later-day test
+inputs. It never overwrites the live model. Reports live under ignored `data/`;
+benchmark scratch files under ignored `tmp/`. Small smoke samples may be
+inconclusive. Gross screened amount is not fraud money saved.
 
-## Interpretation and limits
+Windows tests use local sockets in FastAPI TestClient; restricted sandboxes may
+block event-loop creation. Run those tests in an ordinary authorized PowerShell
+environment. This is not a reason to disable the API tests.
 
-- Smoke calibration coverage is approximately 85.83%, below the 90% target.
-  Everyday payments can be warned on. Preserve those outcomes; never pin a clean
-  scenario to release to make the model look better.
-- Graph semantics preserve the trained baseline: directed traversal outward from
-  reported accounts, with previous-UTC-day edges/reports. Correct distance-to-report
-  semantics need new feature versions, retraining and evaluation.
-- Generated opening funds and prior settled transfers populate the ledger. Holds
-  do not debit or reserve funds. Dummy authorization checks funds and settles in
-  one SQLite transaction; there is no delayed external rail.
-- Generated histories are not an independent real-world validation dataset.
-  FRI/MuleHunter/NCRP connectivity, voice analysis, trained multilingual stage
-  inference, production GNN, DP and secure aggregation remain research milestones.
-- All feeds in a world share an evidence revision, conservatively invalidating
-  reviews even for unrelated new reports. Per-account invalidation can narrow this
-  later while preserving relevant evidence checks.
-- Sessions and analyst controls model local roles, not production authentication.
-  No PIN is requested. Consented synthetic text stays local; unconsented text is
-  excluded from requests, snapshots and traces.
-- Review hashes/triggers detect accidental changes, not administrator tampering.
-  Stop the app before backing up its database and any WAL/SHM files.
+## Reset and recovery
 
-See VERSION_RECOVERY.md for source checkpoints versus runtime database/model
-recovery. Never force-reset shared main.
+Payer **Delete this wallet** purges its synthetic records after confirmation.
+It does not delete other worlds. Keep backups if you need previous evidence.
+See VERSION_RECOVERY.md for safe source restore and MODEL_LIFECYCLE.md for
+artifact/database rollback. Never run older code on a newer schema blindly.
+
+See DECK_CHECKLIST.md for scope, ARCHITECTURE.md for data/logic flow,
+THREAT_MODEL.md for demo access/retention, and VALIDATION.md for measurements.

@@ -123,3 +123,36 @@
   the separate PR-triggered run was still running when checked.
 - Working tree was clean after stage publication. Runtime data/models are ignored.
   Subsequent commit only records this publication receipt in the running log.
+
+### Decision-platform baseline and staged scope
+- Started from clean d1a01ff on codex/decision-platform. Policy 20/20 and pip check pass.
+- Scope and stage exit checks are in docs/DELIVERY_REVIEW.md. Full baseline suite running.
+- Preserve graph/model compatibility; unvalidated research features remain explicitly partial.
+
+
+### Wallet, roles and evidence implementation
+- Simplified payment copy and isolated the decision explorer and role console.
+- Added scoped expiring/revocable recipient sharing, independent analyst/contact capabilities and consented durable inboxes.
+- Bound analyst approval to exact review ID, added deletion, mock-provider envelopes, correlation IDs, failure events, feature witnesses and verification bundles.
+- Found and fixed SHAP using all trees while risk used best_iteration; now explanations must reconstruct the displayed score.
+- 51 tests pass outside the socket-restricted Windows sandbox. JavaScript syntax checks pass. Browser completed INR 1,250.50 dummy transfer; remaining QA in progress.
+- No research-only voice/stage/privacy weights invented; no default branch changes.
+
+
+### Evaluation, browser verification and handoff — 23 October 2026
+- Separated tuning/calibration days and rebuilt smoke artifacts; coverage 92.10%, recall at tuning-selected threshold 35.48% (fails deck target). No promotion claimed.
+- Added three-seed unseen-type benchmark: 4 measured low-support configurations, 5 inconclusive; every result retained in docs/EVALUATION_RESULTS.md.
+- Added manifest, explicit model gates, pinned test requirements and CI evaluation artifacts.
+- Final 52-test suite and policy 20/20 passed; HTTP/SSE/restart test now kills only its complete owned Windows child process tree.
+- Browser verified INR 125,000 two-group hold, consented contact inbox, fresh review, separate analyst approval and matching recipient credit. All four responsive widths inspected without inner overflow.
+- Added feature/architecture/privacy/model-lifecycle documentation, deck checklist and final screenshot. Source/model/database recovery boundaries remain explicit.
+- Default branch untouched. Preparing final stage commit and draft PR.
+
+
+### Publication receipt — 23 October 2026
+- Published codex/decision-platform at implementation commit 6db67c7.
+- Draft PR #5: https://github.com/aldenantonythalachira/maya-fraud-detection/pull/5 (base codex/interactive-wallet).
+- Recovery tags maya/04-decision-platform (286b960) and maya/05-evaluation-and-handoff (6db67c7) are published.
+- Implementation CI passed: https://github.com/aldenantonythalachira/maya-fraud-detection/actions/runs/39850233275.
+- No merge or default-branch changes. Final follow-up commit only records this receipt; its CI status must be read separately.
+

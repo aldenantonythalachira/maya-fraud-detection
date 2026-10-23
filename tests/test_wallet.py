@@ -119,7 +119,10 @@ class WalletTests(unittest.TestCase):
         fresh = self.service.review(self.wid, "owner", p["id"])
         with self.assertRaisesRegex(ValueError, "analyst"):
             self.send(p, fresh)
-        self.service.control(self.wid, "owner", "approve", pid=p["id"], review_id=fresh["id"])
+        with self.assertRaisesRegex(ValueError, "Independent"):
+            self.service.control(self.wid, "owner", "approve", pid=p["id"], review_id=fresh["id"])
+        analyst = self.service.provision(self.wid, "analyst")["token"]
+        self.service.role_action(analyst, "approve", p["id"], fresh["id"])
         self.send(p, fresh)
 
     def test_events_and_snapshot_immutable(self):

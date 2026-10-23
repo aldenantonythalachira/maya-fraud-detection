@@ -42,3 +42,17 @@ Reinstall the checkpoint's dependencies before starting an older version.
 
 Release checkpoints are published alongside their feature branch. The running
 logs record which tests passed and which features each checkpoint contains.
+
+## Decision-platform stages
+
+`maya/04-decision-platform` preserves the wallet/role/evidence stage (286b960).
+`maya/05-evaluation-and-handoff` is the completed follow-up checkpoint once published.
+The feature branch is `codex/decision-platform`, based on `codex/interactive-wallet`.
+Keep staged PR merge order; no merge is performed by this work.
+
+Stop the server before restoring. The v2 default database is separate from v1.
+The original model bundle was preserved locally under
+`tmp/models-before-decision-platform/`; it is ignored and is not part of GitHub.
+Restore matching source, dependency lock, model/calibration/manifest and a compatible
+database together. See MODEL_LIFECYCLE.md. The model's inference/policy versions
+reject incompatible review recomputation instead of altering historical evidence.

@@ -32,10 +32,10 @@ class ApiTests(unittest.TestCase):
         self.assertEqual(first.json(), self.client.post(route, json=body).json())
         ledger = self.client.get(self.base + "/ledger/" + first.json()["id"]).json()
         self.assertEqual([r["delta"] for r in ledger], [-125050, 125050])
-        observer = self.client.get("/api/observe/" + self.world["observer"]).json()
+        observer = self.client.get("/api/observer", headers={"X-Maya-Access": self.world["observer"]}).json()
         self.assertEqual(len(observer["transfers"]), 1)
         events = self.client.get(self.base + "/events").json()
-        self.assertEqual(events[-1]["stage"], "settled")
+        self.assertIn("settled", [e["stage"] for e in events])
 
     def test_cross_session_origin_and_client_score_rejected(self):
         other = TestClient(create_app(self.service))
@@ -65,6 +65,9 @@ class ApiTests(unittest.TestCase):
                 p = live.intent(w["id"], "live-test", w["default_recipient"], w["default_amount_paise"])
                 r = live.review(w["id"], "live-test", p["id"])
                 self.assertEqual(len(r["model"]["contributions"]), 18)
+                import math
+                logit = r["model"]["base_margin"] + sum(c["value"] for c in r["model"]["contributions"])
+                self.assertAlmostEqual(1 / (1 + math.exp(-logit)), r["model"]["score"], places=5)
                 self.assertEqual(live.replay(w["id"], "live-test", r["id"], True), r)
         finally:
             live.db.close()
