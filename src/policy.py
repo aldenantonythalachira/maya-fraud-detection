@@ -8,7 +8,7 @@ are soft only and can never trigger a hold on their own.
 
 Decision table (conformal set -> action):
     {fine}          -> release
-    {scam}          -> hold (analyst review when amount > 100,000)
+    {scam}          -> same two-group safeguard as unsure
     {fine, scam}    -> hold if (payment-hard AND receiving-hard)
                               or (any hard AND any soft)
                        else nudge
@@ -98,7 +98,7 @@ def decide(
 
     `mulehunter_status` is the mock MuleHunter.AI verdict for the receiving
     account ("clean"/"suspicious"/"mule"). A "mule" verdict while the conformal
-    set is unsure ({fine, scam}) is treated as a Receiving Account hard signal.
+    set is not fine is treated as a Receiving Account hard signal.
     """
     soft = soft_signals(soft)
     n_soft = sum(soft.values())
@@ -106,15 +106,15 @@ def decide(
     hard = hard_signals(features, thr)
     payment = any(hard[f] for f in PAYMENT_HISTORY_FEATURES)
     receiving = any(hard[f] for f in RECEIVING_ACCOUNT_FEATURES)
-    mule_signal = mulehunter_status == "mule" and conf_set == SET_NAMES[SET_UNSURE]
+    if conf_set not in SET_NAMES.values():
+        raise ValueError(f"Unknown conformal set: {conf_set!r}")
+    mule_signal = mulehunter_status == "mule" and conf_set != SET_NAMES[SET_FINE]
     receiving = receiving or mule_signal
     n_hard = int(payment) + int(receiving)
 
     if conf_set == SET_NAMES[SET_FINE]:
         action = ACTION_RELEASE
-    elif conf_set == SET_NAMES[SET_SCAM]:
-        action = ACTION_HOLD
-    else:  # unsure: {fine, scam}
+    else:  # A model prediction never bypasses the two-group safeguard.
         if (payment and receiving) or (n_hard >= 1 and n_soft >= 1):
             action = ACTION_HOLD
         else:
@@ -152,7 +152,7 @@ def active_signals(features, soft, thr: Thresholds, mulehunter_status: str | Non
     """Diagnostic view of which signals fired (not part of the return contract)."""
     hard = hard_signals(features, thr)
     soft_norm = soft_signals(soft)
-    if mulehunter_status == "mule" and conf_set == SET_NAMES[SET_UNSURE]:
+    if mulehunter_status == "mule" and conf_set != SET_NAMES[SET_FINE]:
         hard["mulehunter"] = True
     return {
         "hard": {k: v for k, v in hard.items() if v},
@@ -228,8 +228,8 @@ def run_self_test() -> bool:
     cases = [
         # name, set, features, soft, amount, action, minutes, analyst, mulehunter
         ("fine releases", fine, both_feats, chat, 500_000.0, "release", 0, False, None),
-        ("scam holds small", scam, none_feats, soft_off, 500.0, "hold", 60, False, None),
-        ("scam holds big + analyst", scam, none_feats, soft_off, 150_000.0, "hold", 60, True, None),
+        ("scam without signals nudges", scam, none_feats, soft_off, 500.0, "nudge", 0, False, None),
+        ("scam two groups + analyst", scam, both_feats, soft_off, 150_000.0, "hold", 60, True, None),
         ("unsure no signals -> nudge", unsure, none_feats, soft_off, 900.0, "nudge", 0, False, None),
         ("unsure soft only -> nudge", unsure, none_feats, chat, 900.0, "nudge", 0, False, None),
         ("unsure screen only -> nudge", unsure, none_feats, screen, 900.0, "nudge", 0, False, None),
@@ -247,7 +247,7 @@ def run_self_test() -> bool:
         ("unsure suspicious -> nudge", unsure, none_feats, soft_off, 900.0, "nudge", 0, False, "suspicious"),
         ("unsure clean -> nudge", unsure, none_feats, soft_off, 900.0, "nudge", 0, False, "clean"),
         ("fine mule ignored -> release", fine, none_feats, soft_off, 900.0, "release", 0, False, "mule"),
-        ("scam mule ignored -> hold", scam, none_feats, soft_off, 900.0, "hold", 60, False, "mule"),
+        ("scam mule alone -> nudge", scam, none_feats, soft_off, 900.0, "nudge", 0, False, "mule"),
     ]
 
     n_pass = 0
