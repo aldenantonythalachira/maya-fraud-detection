@@ -12,6 +12,8 @@ import pandas as pd
 
 from features import DAY, combine, endpoint_features, reported_proximity
 from risk_common import FEATURE_COLUMNS
+from feature_lineage import witnesses
+from provider_evidence import responses
 
 FEATURE_VERSION = "batch-parity-report-outward-v1"
 
@@ -52,7 +54,7 @@ def snapshot(world, sender, recipient, amount_paise, at):
     features = combine(endpoint_features(tx), tx, ds, dr, business)
     row = features[features.txn_id == candidate_id].iloc[0]
     values = {k: None if pd.isna(row[k]) else float(row[k]) for k in FEATURE_COLUMNS}
-    return dict(values=values, version=FEATURE_VERSION, evidence=eligible,
+    result = dict(values=values, version=FEATURE_VERSION, evidence=eligible,
                 candidate_time=at, graph_cutoff=int(at) // DAY * DAY,
                 graph_convention="directed outward reachability from reports; previous UTC day",
                 lineage=dict(history_event_ids=[e["id"] for e in payments],
@@ -63,6 +65,10 @@ def snapshot(world, sender, recipient, amount_paise, at):
                                           z_t="log amount - median log all prior endpoint amounts",
                                           pi_t="same-counterparty settled amounts <= INR 10 in (t-1h,t)",
                                           d_R="legacy report-outward directed reachability, capped at 3")))
+    result["lineage"]["features"] = witnesses(world, sender, recipient, amount_paise, at, values, result["lineage"]["windows"])
+    result["lineage"]["schema_version"] = "witness-v1"
+    result["providers"] = responses(world, eligible, at)
+    return result
 
 
 def numeric(values):

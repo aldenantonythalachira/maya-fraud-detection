@@ -67,8 +67,9 @@ def feature_snapshot(payment, evidence):
 class ModelAdapter:
     def __init__(self, model_path, calibration_path):
         import xgboost as xgb
-        self.model = xgb.XGBClassifier()
+        self.model = xgb.XGBClassifier(n_jobs=1)
         self.model.load_model(model_path)
+        self.model.set_params(n_jobs=1)
         self.qhat = json.loads(Path(calibration_path).read_text())["qhat"]
         self.version = hashlib.sha256(Path(model_path).read_bytes()).hexdigest()
         self.calibration_version = hashlib.sha256(Path(calibration_path).read_bytes()).hexdigest()

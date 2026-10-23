@@ -27,7 +27,7 @@ _BASE_REASONS = {
     "g_t": "Received a credit from an unknown sender recently",
     "z_t": "Amount is unusually large vs the account's history",
     "pi_t": "Repeated tiny probe payments to the same payee within an hour",
-    "d_R": "Within two payment hops of a reported fraudulent account",
+    "d_R": "Prior-day directed reachability outward from a reported account",
 }
 
 ENGLISH_REASONS = {}
@@ -48,3 +48,13 @@ def load_features(path: str, columns=None) -> pd.DataFrame:
         if c in df.columns:
             df[c] = df[c].astype("float32")
     return df
+
+
+def validation_partitions(df):
+    """Whole-day tuning/calibration partition; test is never used to tune either."""
+    val = df[df["split"] == "val"]
+    days = sorted(val["day"].unique())
+    if len(days) < 2:
+        raise ValueError("At least two validation days are required for independent tuning/calibration")
+    boundary = days[len(days) // 2]
+    return val[val.day < boundary], val[val.day >= boundary]

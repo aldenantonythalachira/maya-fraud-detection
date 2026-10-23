@@ -9,6 +9,23 @@ jobs:
         with:
           python-version: '3.12'
           cache: pip
-      - run: python -m pip install -r requirements-core.txt
+      - run: python -m pip install -r requirements-test.lock.txt
+      - run: python scripts/bootstrap_demo.py
       - run: python -m unittest discover -s tests -v
       - run: python src/policy.py --self-test
+      - run: python scripts/evaluate_demo.py
+      - run: python scripts/evaluate_heldout.py
+      - run: python scripts/model_health.py
+      - run: python -m pip check
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Browser module syntax
+        run: |
+          for source in web/app.js web/console.js web/explorer.js; do
+            node --input-type=module --check < "$source"
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: synthetic-evaluation
+          path: data/evaluation*.json
