@@ -1,3 +1,7 @@
+> Historical design specification. Current shipped behavior and gaps are tracked in
+> DECK_CHECKLIST.md, ARCHITECTURE.md and DEMO_RUNBOOK.md. Proposed frameworks,
+> role controls and metrics below are not a claim of current implementation.
+
 # MAYA: execution plan for an interactive payment simulator
 
 Prepared 22 October 2026. Status: implementation specification, not a claim that

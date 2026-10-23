@@ -1,0 +1,33 @@
+/* Shared wallet, evidence and role-console layout. */
+.skip-link { position:fixed; left:16px; top:-80px; z-index:100; background:#193b34; color:white; padding:14px; border-radius:8px; }
+.skip-link:focus { top:12px; }
+.console-shell { max-width:820px; margin:40px auto; padding:0 20px 60px; }
+.console-shell h1 { margin-bottom:24px; }
+.console-shell label { display:block; margin:18px 0 8px; }
+.console-shell pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:420px; overflow:auto; font-size:12px; }
+.console-shell .field { min-height:48px; }
+.case-row { padding:18px 0; border-bottom:1px solid #d5dfd9; }
+.grant-link { display:inline-flex; margin-top:20px; color:#193b34; text-decoration:none; }
+.fact-grid { display:grid; grid-template-columns:110px minmax(0,1fr); gap:12px; font-size:12px; }
+.fact-grid dt { color:#51675b; }.fact-grid dd { margin:0; overflow-wrap:anywhere; }
+.mono { font-family:monospace; }.feature-value { float:right; font-family:monospace; padding-left:10px; color:#193b34; }
+.panel details[id] { scroll-margin-top:30px; }
+.panel details[open] { border-bottom:1px solid #d5dfd9; padding-bottom:16px; }
+.panel summary { font-size:13px; min-height:32px; }
+.panel p { font-size:12px; line-height:1.6; }
+.trace-failed { color:#963a2d!important; }.trace-failed::before { background:#963a2d!important; }
+.top-actions a { color:inherit; text-decoration:none; }
+.demo-label { background:#e5efe7; padding:6px 10px; border-radius:20px; font-weight:650; }
+.greeting h1 { font-size:28px; letter-spacing:-.8px; }
+.greeting .eyebrow { display:none; }
+.wallet-card { border-radius:24px; box-shadow:0 12px 32px #193b3412; }
+.card { box-shadow:0 3px 20px #193b3406; }
+.muted,.micro,.activity-copy small,.search-count { color:#51665a; }
+.trace small { color:#536b5d; }
+.signal-group { color:#51665a; }
+.data-table a { color:#285947; text-decoration:underline; }
+.icon-button,.link-button { min-height:44px; display:inline-flex; align-items:center; justify-content:center; }
+.secondary,.primary { touch-action:manipulation; }
+[hidden] { display:none!important; }
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible,summary:focus-visible { outline:3px solid #4675bd; outline-offset:4px; }
+@media(max-width:760px) { .topbar { gap:10px; }.top-actions { gap:6px; }.icon-button { font-size:11px; padding:6px 8px; }.brand { font-size:25px; }.workspace.inspecting aside { margin-top:28px; }.console-shell { margin-top:24px; }.fact-grid { grid-template-columns:95px minmax(0,1fr); } }
