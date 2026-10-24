@@ -1,0 +1,99 @@
+{
+  "features": [
+    "n_t",
+    "e_t",
+    "g_t",
+    "z_t",
+    "pi_t",
+    "d_R",
+    "n_t_snd",
+    "n_t_rcv",
+    "e_t_snd",
+    "e_t_rcv",
+    "g_t_snd",
+    "g_t_rcv",
+    "z_t_snd",
+    "z_t_rcv",
+    "pi_t_snd",
+    "pi_t_rcv",
+    "d_R_snd",
+    "d_R_rcv",
+    "v_t",
+    "zc_t",
+    "ptr_t",
+    "v_t_snd",
+    "v_t_rcv",
+    "zc_t_snd",
+    "zc_t_rcv",
+    "ptr_t_snd",
+    "ptr_t_rcv"
+  ],
+  "source": "generated interactive worlds only",
+  "test_auroc": 1.0,
+  "test_auprc": 1.0,
+  "test_recall_at_1pct_fpr": 1.0,
+  "test_benign_intervention_rate": 0.0,
+  "threshold": 0.4357931315898895,
+  "confusion_matrix": [
+    [
+      240,
+      0
+    ],
+    [
+      0,
+      160
+    ]
+  ],
+  "best_iteration": 0,
+  "splits": {
+    "train": {
+      "first_seed": 0,
+      "last_seed": 119,
+      "world_count": 120,
+      "rows": 600,
+      "positives": 240
+    },
+    "val": {
+      "first_seed": 300,
+      "last_seed": 339,
+      "world_count": 40,
+      "rows": 200,
+      "positives": 80
+    },
+    "calib": {
+      "first_seed": 500,
+      "last_seed": 579,
+      "world_count": 80,
+      "rows": 400,
+      "positives": 160
+    },
+    "test": {
+      "first_seed": 1000,
+      "last_seed": 1079,
+      "world_count": 80,
+      "rows": 400,
+      "positives": 160
+    }
+  },
+  "limits": [
+    "Same synthetic generator family across disjoint seeds",
+    "Positive labels authored from generator causes",
+    "Not UPI, public-data or real-world accuracy",
+    "Source-specific candidate; no universal fraud claim"
+  ],
+  "conformal": {
+    "coverage": 1.0,
+    "coverage_scam": 1.0,
+    "coverage_fine": 1.0,
+    "set_distribution": {
+      "{fine}": 240,
+      "{scam}": 0,
+      "{fine, scam}": 160
+    },
+    "unsure_share": 0.4,
+    "scam_singleton_recall": 0.0,
+    "scam_detection_rate": 1.0,
+    "avg_set_size": 1.4
+  },
+  "promotion_scope": "interactive-sandbox-only; not bank scoring"
+}

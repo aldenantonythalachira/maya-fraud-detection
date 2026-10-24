@@ -1,5 +1,33 @@
 # MAYA
 
+## V4 customer product
+
+The current product is a mobile customer app, an independently paired judge view,
+a recipient view and a server-owned dummy ledger. Use `run_demo.py`; the older
+Streamlit and `src/api.py` entrypoints below remain research examples.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+.\.venv\Scripts\python.exe scripts/bootstrap_v4.py
+.\.venv\Scripts\python.exe scripts/train_wallet_bundle.py
+.\.venv\Scripts\python.exe run_demo.py
+```
+
+Open `http://127.0.0.1:8000/app/`. Pair `/demo/` and `/recipient/` in separate
+browsers using the codes from the customer payment screen. Dummy payment success
+comes from committed ledger state. No real money, bank credentials or government
+report submission are involved.
+
+See [Docker/HTTPS deployment](docs/DEPLOY_V4.md), [release status and limits](docs/V4_RELEASE_STATUS.md)
+and [frozen evidence](docs/evidence). A public deployment requires a hosting
+account/server and hostname. No bank-ready or national-throughput claim is made.
+
+The public companion sends derived intent only; raw message parsing stays in the
+browser. It abstains from behavioral scoring without bank history. The sandbox,
+public PaySim benchmark and partner-model contracts are separate sources.
+
+---
+
 Synthetic UPI scam-journey detector and Streamlit demonstration. The core uses
 past-only payment/recipient features, XGBoost, conformal prediction and a
 two-group intervention policy. No real payments or external fraud reports occur.

@@ -1,0 +1,11 @@
+.git
+.venv
+data
+models
+tmp
+reports
+node_modules
+.env
+*.pdf
+tests
+ui

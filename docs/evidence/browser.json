@@ -1,0 +1,13 @@
+{
+  "passed": true,
+  "origin": "http://127.0.0.1:8003",
+  "checks": [
+    "three isolated contexts",
+    "live observation",
+    "ledger-backed recipient receipt",
+    "raw-text network canary",
+    "revocation",
+    "390px overflow"
+  ],
+  "errors": []
+}

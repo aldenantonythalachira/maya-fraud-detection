@@ -126,3 +126,42 @@
   Edge screenshots of every scenario at 360–1920 px in both languages, no
   console errors; keyboard-only pay reaches a hold. Hindi copy needs a native
   speaker's review.
+
+### 2026-10-24 - V4 product implementation (codex/v4-product)
+
+- Based the integration branch on merged PR8/main 5872f87. Preserved earlier
+  wallet lineage and public API research examples; the V4 public entrypoint is
+  now run_demo.py/product_api.py with its own mobile and observer surfaces.
+- Restored transactional wallet/ledger, generated worlds and evidence witnesses;
+  upgraded exact batch/online parity to 27 columns, class-specific calibration
+  and selected-tree SHAP reconstruction. Schema/hash mismatches refuse loading.
+- Implemented server-owned create/review/execute/cancel/receipt flow, persistent
+  idempotency, holds that survive context removal on the same financial operation,
+  expiring one-use device pairing, scoped judge/recipient grants, revocation,
+  ordered SSE replay, signed review projections, cases and delayed operator labels.
+- Raw optional text/QR parsing stays in-browser. The public companion sends
+  derived intent only and abstains from unsupported behavioral scoring. Legacy
+  session-header/analyst endpoints are not mounted publicly.
+- Added PostgreSQL adapter/migration/advisory locking, non-root Docker image,
+  Caddy HTTPS, bounded admission, exact proxy-address trust and separate CI jobs
+  for PostgreSQL and image construction. Docker is unavailable on this machine;
+  target-host/TLS confirmation remains pending actual hosting access.
+- Downloaded public PaySim with checksums and attribution. A 984,174-row complete-hour
+  chronological prefix has disjoint train/val/calibration/test hours. Test support:
+  250,349 rows, 89 fraud labels. XGBoost PR-AUC .5902 / recall .8539; MLP PR-AUC
+  .4827 / recall .7079 at validation-selected thresholds. No neural promotion.
+- Preserved original root artifacts before rebuilding the 27-feature smoke model.
+  It failed its benign calibration target and wallet-domain tests; failures are
+  retained. Added a separate generated-world model using disjoint seed groups,
+  explicitly limited to that easy synthetic source, plus event-level evasion tests.
+- Three isolated browser contexts completed real dummy settlement/recipient receipt,
+  live judge observation, raw-text network canary and access revocation. Screenshots
+  were visually inspected. Local load: 25 requests/s, p95 37.0ms without errors in
+  a 10-second level; at 50/s, 60/500 requests rejected and successful p95 228.6ms.
+  Short SQLite measurements are not production or national-UPI capacity evidence.
+- Regression at this checkpoint: 135 passed, one PostgreSQL test skipped locally,
+  24 subtests; policy 22/22. Additional signature/bundle tests are included for final
+  validation. No human usability study, native Hindi approval or real-bank claim.
+- Added deployment/release-status documents, safe backup tool and frozen evidence.
+  User selected Docker+HTTPS/product name mayaupi but has no server/account/domain
+  connected; no hosting resource, subscription or domain was purchased.

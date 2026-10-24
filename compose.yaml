@@ -1,0 +1,73 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      MAYA_ENV: production
+      MAYA_PUBLIC_ORIGIN: https://${MAYA_DOMAIN:?Set MAYA_DOMAIN}
+      MAYA_SESSION_SECRET: ${MAYA_SESSION_SECRET:?Generate a persistent session secret}
+      MAYA_DATABASE_URL: postgresql://maya:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@db:5432/maya
+      MAYA_OPERATOR_KEY: ${MAYA_OPERATOR_KEY:-}
+      MAYA_PARTNER_KEY: ${MAYA_PARTNER_KEY:-}
+      MAYA_MAX_INFLIGHT: ${MAYA_MAX_INFLIGHT:-8}
+      MAYA_REQUESTS_PER_MINUTE: ${MAYA_REQUESTS_PER_MINUTE:-600}
+      MAYA_PROXY_IP: 172.30.4.2
+    networks:
+      private:
+        ipv4_address: 172.30.4.3
+    depends_on:
+      db:
+        condition: service_healthy
+    expose:
+      - '8000'
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: [ALL]
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/data/v4:uid=10001,gid=10001
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    networks:
+      private:
+        ipv4_address: 172.30.4.4
+    environment:
+      POSTGRES_DB: maya
+      POSTGRES_USER: maya
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U maya -d maya']
+      interval: 10s
+      timeout: 5s
+      retries: 8
+  proxy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    networks:
+      private:
+        ipv4_address: 172.30.4.2
+    environment:
+      MAYA_DOMAIN: ${MAYA_DOMAIN:?Set MAYA_DOMAIN}
+    ports:
+      - '80:80'
+      - '443:443'
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+volumes:
+  database:
+  caddy_data:
+  caddy_config:
+networks:
+  private:
+    ipam:
+      config:
+        - subnet: 172.30.4.0/24

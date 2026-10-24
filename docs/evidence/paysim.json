@@ -1,0 +1,172 @@
+{
+  "dataset": "PaySim public synthetic mobile-money; not UPI",
+  "source_sha256": "16910f90577b0d981bf8ff289714510bb89bc71bff7d3f220f024e287e4eea6b",
+  "requested_max_rows": 1000000,
+  "actual_rows": 984174,
+  "features": [
+    "amount",
+    "oldbalanceOrg",
+    "oldbalanceDest",
+    "sender_prior_count",
+    "sender_prior_total",
+    "receiver_prior_count",
+    "receiver_prior_total",
+    "type_CASH_IN",
+    "type_CASH_OUT",
+    "type_DEBIT",
+    "type_PAYMENT",
+    "type_TRANSFER"
+  ],
+  "split_contract": "whole chronological hours, 60/15/10/15; no current-hour history",
+  "splits": {
+    "train": {
+      "rows": 576293,
+      "positives": 301,
+      "first_step": 1,
+      "last_step": 26
+    },
+    "val": {
+      "rows": 23697,
+      "positives": 60,
+      "first_step": 27,
+      "last_step": 33
+    },
+    "calib": {
+      "rows": 133835,
+      "positives": 69,
+      "first_step": 34,
+      "last_step": 37
+    },
+    "test": {
+      "rows": 250349,
+      "positives": 89,
+      "first_step": 38,
+      "last_step": 44
+    }
+  },
+  "excluded": [
+    "isFraud as predictor",
+    "isFlaggedFraud",
+    "newbalanceOrig",
+    "newbalanceDest",
+    "raw account IDs",
+    "post-transfer differences"
+  ],
+  "opening_balance_assumption": "Source opening balances assumed available before transfer; partner availability must be validated",
+  "baseline_all_legitimate": {
+    "accuracy": 0.9996444962831886,
+    "fraud_recall": 0
+  },
+  "candidates": {
+    "logistic": {
+      "pr_auc": 0.13905360589942795,
+      "auroc": 0.945816710171983,
+      "recall": 0.5842696629213483,
+      "precision": 0.020496649586125345,
+      "benign_intervention_rate": 0.009929673139934468,
+      "threshold": 0.8814670336268362,
+      "confusion_matrix": [
+        [
+          247775,
+          2485
+        ],
+        [
+          37,
+          52
+        ]
+      ],
+      "fit_and_evaluate_seconds": 2.2388439000005746,
+      "uncertainty": {
+        "coverage": 0.9891711171204998,
+        "coverage_scam": 0.8426966292134831,
+        "coverage_fine": 0.9892232078638217,
+        "set_distribution": {
+          "{fine}": 225206,
+          "{scam}": 2753,
+          "{fine, scam}": 22390
+        },
+        "unsure_share": 0.08943514853264842,
+        "scam_singleton_recall": 0.6292134831460674,
+        "scam_detection_rate": 0.8426966292134831,
+        "avg_set_size": 1.0894351485326483
+      },
+      "score_only_p95_ms": 7.924249998632149
+    },
+    "xgboost": {
+      "pr_auc": 0.590244215485556,
+      "auroc": 0.9926413608498847,
+      "recall": 0.8539325842696629,
+      "precision": 0.02766654532216964,
+      "benign_intervention_rate": 0.010672900183808839,
+      "threshold": 0.0040558092296123505,
+      "confusion_matrix": [
+        [
+          247589,
+          2671
+        ],
+        [
+          13,
+          76
+        ]
+      ],
+      "fit_and_evaluate_seconds": 6.880270899999232,
+      "uncertainty": {
+        "coverage": 0.9891391617302246,
+        "coverage_scam": 0.9213483146067416,
+        "coverage_fine": 0.9891632701989931,
+        "set_distribution": {
+          "{fine}": 242847,
+          "{scam}": 2788,
+          "{fine, scam}": 4714
+        },
+        "unsure_share": 0.01882971371964737,
+        "scam_singleton_recall": 0.8539325842696629,
+        "scam_detection_rate": 0.9213483146067416,
+        "avg_set_size": 1.0188297137196474
+      },
+      "score_only_p95_ms": 9.21602500075096
+    },
+    "mlp": {
+      "pr_auc": 0.48269044468053285,
+      "auroc": 0.9712470715848776,
+      "recall": 0.7078651685393258,
+      "precision": 0.029773156899810964,
+      "benign_intervention_rate": 0.008203468392871414,
+      "threshold": 0.004266081538648312,
+      "confusion_matrix": [
+        [
+          248207,
+          2053
+        ],
+        [
+          26,
+          63
+        ]
+      ],
+      "fit_and_evaluate_seconds": 27.867320299999847,
+      "uncertainty": {
+        "coverage": 0.989454721209192,
+        "coverage_scam": 0.898876404494382,
+        "coverage_fine": 0.9894869335890674,
+        "set_distribution": {
+          "{fine}": 227693,
+          "{scam}": 2696,
+          "{fine, scam}": 19960
+        },
+        "unsure_share": 0.07972869873656376,
+        "scam_singleton_recall": 0.7303370786516854,
+        "scam_detection_rate": 0.898876404494382,
+        "avg_set_size": 1.0797286987365637
+      },
+      "score_only_p95_ms": 7.4644049991547945
+    }
+  },
+  "hardware": "Windows-11-10.0.26300-SP0",
+  "elapsed_seconds": 51.30523085594177,
+  "limits": [
+    "Score-only timings are not service capacity",
+    "Synthetic source does not validate UPI intent or coercion",
+    "No model automatically promoted",
+    "No real-world accuracy claim"
+  ]
+}

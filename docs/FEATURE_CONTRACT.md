@@ -1,6 +1,6 @@
 # Feature contract
 
-Version: `batch-parity-report-outward-v1`. Witness schema: `witness-v1`.
+Version: `batch-parity-27-report-outward-v2`. Witness schema: `witness-v1`.
 Source of numeric truth: `src/features.py`, shared by `online_features.py`.
 The witness builder explains the source inputs; it does not replace inference.
 
@@ -18,7 +18,11 @@ delayed. No attempted or cancelled live transfer becomes settled history.
 | pi_t | Settled amounts <= INR 10 between the same pair, either direction, in (T-1h,T) | Zero without probes; max across endpoints |
 | d_R | Directed outward reachability FROM reported accounts, 0/1/2 hops, cap 3; report and edge available before current UTC day | No known path ->3; min across endpoints. Cap 3 means no path within supported radius, not proof of safety |
 
-Per-side `_snd` and `_rcv` columns remain in the 18-column model input.
+| v_t | Same-direction pair payment count in (T-24h,T) | Zero without events; endpoint max |
+| zc_t | log(candidate plus pair24 total) minus median all-prior log amount | Missing without history; largest absolute endpoint value |
+| ptr_t | Endpoint outflow / inflow in (T-24h,T) | Missing without inflow; max ignoring missing |
+
+Per-side `_snd` and `_rcv` columns remain in the 27-column model input.
 Business exceptions apply only to combined n_t/e_t, preserving training semantics.
 Endpoint histories include both directions. The deck's phrasing "new payees"
 and "distance to reports" is narrower/different; do not equate them with this
