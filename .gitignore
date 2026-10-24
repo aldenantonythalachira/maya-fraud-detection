@@ -3,6 +3,15 @@ data/*.csv
 data/*.parquet
 data/smoke/
 models/*.json
+models/**
+data/checkpoints/
+data/v4/
+reports/*.json
+.env
+playwright-report/
+node_modules/
+reports/screenshots/failure-*.png
+reports/screenshots/
 data/*.sqlite*
 
 # Python

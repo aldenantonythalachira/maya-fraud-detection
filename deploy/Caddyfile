@@ -1,0 +1,11 @@
+{$MAYA_DOMAIN} {
+    encode zstd gzip
+    request_body {
+        max_size 32KB
+    }
+    reverse_proxy app:8000 {
+        flush_interval -1
+        stream_timeout 2m
+    }
+    header -Server
+}

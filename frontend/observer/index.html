@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>MAYA · Live observation</title>
+    <link rel="stylesheet" href="/product-static/product.css" />
+    <script type="module" src="observer.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="observer">
+      <header class="header">
+        <a class="brand" href="/app/">MAYA<span class="brand-dot">●</span></a>
+        <div class="row">
+          <span class="badge">READ ONLY</span
+          ><span class="pill sandbox">SANDBOX · DUMMY MONEY</span
+          ><span id="connection" role="status">Not connected</span>
+        </div>
+      </header>
+      <main id="main" tabindex="-1">
+        <section id="pairing" class="card">
+          <p class="eyebrow">A SEPARATE VIEW OF THE SAME PAYMENT</p>
+          <h1>Watch it happen.</h1>
+          <form id="pair-form">
+            <label for="code">Pairing code from the customer device</label
+            ><input
+              id="code"
+              required
+              minlength="12"
+              maxlength="12"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="12-character code"
+            />
+            <div class="section">
+              <button type="submit">Connect device</button>
+            </div>
+          </form>
+        </section>
+        <section id="dashboard" hidden>
+          <div class="row">
+            <h1 id="headline">Waiting for a payment</h1>
+            <button id="refresh" class="quiet">Refresh</button>
+          </div>
+          <div class="observer-grid">
+            <div>
+              <section id="summary" class="card"></section>
+              <section class="card">
+                <p class="eyebrow">ACTUAL EXECUTION</p>
+                <h2>From intent to outcome</h2>
+                <div id="stages" class="stages"></div>
+              </section>
+              <section class="card">
+                <h2>Recorded payment connections</h2>
+                <svg
+                  id="graph"
+                  class="graph"
+                  role="img"
+                  aria-label="Recorded synthetic payment edges"
+                  viewBox="0 0 600 220"
+                ></svg>
+                <p class="muted">
+                  Past recorded transfers. Connections alone do not prove fraud.
+                </p>
+              </section>
+            </div>
+            <aside>
+              <section class="card">
+                <h2>Evidence and decision</h2>
+                <div id="evidence"></div>
+              </section>
+              <section class="card">
+                <h2>Review history</h2>
+                <div id="history" class="stack"></div>
+              </section>
+              <section class="card">
+                <h2>Model bundle</h2>
+                <div id="model"></div>
+              </section>
+            </aside>
+          </div>
+          <details>
+            <summary>Inspect all 27 features and attribution</summary>
+            <div id="features"></div>
+          </details>
+          <button id="export" class="quiet">Export selected review</button>
+          <p class="muted section">
+            Scoring, policy intervention and confirmed transfer are different
+            outcomes. Displayed times come from the server; this page cannot
+            authorize a payment.
+          </p>
+        </section>
+        <p id="error" class="error" role="alert" hidden></p>
+      </main>
+    </div>
+  </body>
+</html>

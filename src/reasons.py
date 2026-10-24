@@ -42,7 +42,8 @@ def top_reasons(shap_row: np.ndarray, k: int = 3) -> list:
 def native_contrib(model, X) -> np.ndarray:
     booster = model.get_booster()
     dm = xgb.DMatrix(X, feature_names=FEATURE_COLUMNS)
-    contribs = booster.predict(dm, pred_contribs=True)
+    stop = int(getattr(model, "best_iteration", booster.num_boosted_rounds() - 1)) + 1
+    contribs = booster.predict(dm, pred_contribs=True, iteration_range=(0, stop))
     return contribs[:, :-1]
 
 

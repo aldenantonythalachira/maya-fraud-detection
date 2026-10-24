@@ -1,0 +1,679 @@
+{
+  "task": "authored event-level scenarios, not real-world fraud accuracy",
+  "model_version": "c5b7cfcf5bdd610cf676b3868cd58f0c8b3be5157e0ec216753abe6a3f3e3e39",
+  "groups": {
+    "benign": {
+      "n": 20,
+      "release": 20,
+      "nudge": 0,
+      "hold": 0
+    },
+    "probes": {
+      "n": 20,
+      "release": 0,
+      "nudge": 0,
+      "hold": 20
+    },
+    "split_10": {
+      "n": 20,
+      "release": 0,
+      "nudge": 0,
+      "hold": 20
+    },
+    "fresh_recipient": {
+      "n": 20,
+      "release": 0,
+      "nudge": 20,
+      "hold": 0
+    }
+  },
+  "cases": [
+    {
+      "seed": 200,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 200,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 200,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 200,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 201,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 201,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 201,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 201,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 202,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 202,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 202,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 202,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 203,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 203,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 203,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 203,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 204,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 204,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 204,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 204,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 205,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 205,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 205,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 205,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 206,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 206,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 206,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 206,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 207,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 207,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 207,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 207,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 208,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 208,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 208,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 208,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 209,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 209,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 209,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 209,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 210,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 210,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 210,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 210,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 211,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 211,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 211,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 211,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 212,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 212,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 212,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 212,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 213,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 213,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 213,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 213,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 214,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 214,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 214,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 214,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 215,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 215,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 215,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 215,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 216,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 216,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 216,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 216,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 217,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 217,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 217,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 217,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 218,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 218,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 218,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 218,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    },
+    {
+      "seed": 219,
+      "case": "benign",
+      "authored_label": "benign",
+      "score": 0.37655800580978394,
+      "set": "{fine}",
+      "action": "release"
+    },
+    {
+      "seed": 219,
+      "case": "probes",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 219,
+      "case": "split_10",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "hold"
+    },
+    {
+      "seed": 219,
+      "case": "fresh_recipient",
+      "authored_label": "fraud-intent scenario",
+      "score": 0.4357931315898895,
+      "set": "{fine, scam}",
+      "action": "nudge"
+    }
+  ],
+  "platform": "Windows-11-10.0.26300-SP0",
+  "limits": [
+    "Small authored kit; presets represent causes, not universal fraud labels",
+    "Fresh-recipient and split_10 attacks are evaluation-only here",
+    "No human usability/comprehension claims",
+    "No tuning on this report"
+  ]
+}

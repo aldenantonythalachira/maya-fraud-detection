@@ -1,0 +1,17 @@
+{
+  "name": "MAYA Payment Safety",
+  "short_name": "MAYA",
+  "start_url": "/app/",
+  "scope": "/app/",
+  "display": "standalone",
+  "background_color": "#f5f4fa",
+  "theme_color": "#23264f",
+  "icons": [
+    {
+      "src": "/product-static/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

@@ -1,0 +1,83 @@
+{
+  "hardware": "Windows-11-10.0.26300-SP0",
+  "mode": "full HTTP review including source features, model, policy and durable review/event writes",
+  "workload": "unique pending intents, shared synthetic world: hot-account contention",
+  "seconds_per_level": 10,
+  "runs": [
+    {
+      "offered_rps": 1,
+      "scheduled": 10,
+      "completed": 10,
+      "errors": {},
+      "statuses": {
+        "200": 10
+      },
+      "measured_seconds": 10.000380500001484,
+      "achieved_success_rps": 0.999961951447599,
+      "p50_ms": 21.04249999865715,
+      "p95_ms": 28.405345001192472,
+      "p99_ms": 28.57450900188269
+    },
+    {
+      "offered_rps": 10,
+      "scheduled": 100,
+      "completed": 100,
+      "errors": {},
+      "statuses": {
+        "200": 100
+      },
+      "measured_seconds": 10.00260200000048,
+      "achieved_success_rps": 9.997398676863801,
+      "p50_ms": 28.516550002677832,
+      "p95_ms": 33.110450001913705,
+      "p99_ms": 33.97314099991491
+    },
+    {
+      "offered_rps": 25,
+      "scheduled": 250,
+      "completed": 250,
+      "errors": {},
+      "statuses": {
+        "200": 250
+      },
+      "measured_seconds": 10.000564699999813,
+      "achieved_success_rps": 24.99858832971749,
+      "p50_ms": 20.29374999983702,
+      "p95_ms": 37.020534997282084,
+      "p99_ms": 50.21281499812167
+    },
+    {
+      "offered_rps": 50,
+      "scheduled": 500,
+      "completed": 440,
+      "errors": {
+        "503": 60
+      },
+      "statuses": {
+        "200": 440,
+        "503": 60
+      },
+      "measured_seconds": 10.042897600000288,
+      "achieved_success_rps": 43.812056791257874,
+      "p50_ms": 155.56169999945269,
+      "p95_ms": 228.58081999838757,
+      "p99_ms": 258.7517079994359
+    }
+  ],
+  "limits": [
+    "Short local measurements are not production capacity",
+    "No external bank network",
+    "Client scheduling delay included",
+    "No thresholds bypassed",
+    "Rates stop at errors or >1s p95"
+  ],
+  "cpu": "AMD64 Family 25 Model 117 Stepping 2, AuthenticAMD",
+  "logical_cpus": 16,
+  "model_version": "c5b7cfcf5bdd610cf676b3868cd58f0c8b3be5157e0ec216753abe6a3f3e3e39",
+  "configuration": {
+    "review_admission_limit": 8,
+    "rate_limit_per_ip_per_minute": 60000,
+    "storage": "SQLite WAL",
+    "level_duration_seconds": 10
+  }
+}

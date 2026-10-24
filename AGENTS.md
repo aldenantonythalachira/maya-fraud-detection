@@ -1,5 +1,26 @@
 # AGENTS.md
 
+## V4 product (supersedes older UI/deployment status below)
+
+- Public product entrypoint: `python run_demo.py`; customer `/app/`, judge
+  `/demo/`, recipient `/recipient/`. `src/api.py` and Streamlit remain research
+  examples and are not mounted on the public service.
+- Sandbox source-specific bundle: `scripts/bootstrap_v4.py` then
+  `scripts/train_wallet_bundle.py`; generated artifacts remain ignored. Root batch
+  and wallet model results are different tasks. Partner weights require explicit
+  authorized source/validation configuration; never route sandbox weights there.
+- `online_features.snapshot` uses exact 27-column batch semantics and prior-day
+  report-outward graph semantics. Preserve the independent oracle checks.
+- All customer payment results come from the transactional ledger. Never replace
+  backend execution with UI state, scenario verdicts or artificial timing.
+- Product auth: signed HttpOnly sessions, separate expiring observer grants and
+  independent operator credentials. Raw optional messages stay in the browser.
+- PostgreSQL adapter/migrations support deployment; SQLite is local development.
+  Run `tests/test_postgres.py` with `MAYA_TEST_DATABASE_URL` or the mandatory CI job.
+- Verify `pytest`, policy self-test and the real three-context browser script.
+  See docs/DEPLOY_V4.md and docs/V4_RELEASE_STATUS.md. Public hosting and human
+  usability/native-language review remain external gates until actually verified.
+
 ## Finale changes (2026-10-20; supersedes older status below)
 
 - This is now a Git repository. All changes use feature branches and PRs.
