@@ -23,7 +23,7 @@ jobs:
           POSTGRES_DB: maya
         ports: ['5432:5432']
         options: >-
-          --health-cmd 'pg_isready -U maya -d maya'
+          --health-cmd pg_isready
           --health-interval 10s --health-timeout 5s --health-retries 5
     env:
       MAYA_TEST_DATABASE_URL: postgresql://maya:ci-only-password@localhost:5432/maya
@@ -41,3 +41,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t maya:v4-ci .
+      - name: Run image and verify readiness
+        run: |
+          docker run -d --name maya-v4-ci -p 8000:8000 maya:v4-ci
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent http://127.0.0.1:8000/readyz; then exit 0; fi
+            sleep 2
+          done
+          docker logs maya-v4-ci
+          exit 1
+      - if: always()
+        run: docker rm -f maya-v4-ci || true

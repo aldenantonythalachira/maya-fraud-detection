@@ -11,6 +11,7 @@ reports/*.json
 playwright-report/
 node_modules/
 reports/screenshots/failure-*.png
+reports/screenshots/
 data/*.sqlite*
 
 # Python
