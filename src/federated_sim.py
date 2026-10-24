@@ -1,15 +1,21 @@
-"""Phase 8: federated learning (FedAvg) simulation across two banks.
+"""Phase 8: federated learning (FedAvg-style) simulation across two banks.
 
 Splits customers (sender_id) into two disjoint banks, trains a local XGBoost
-model on each bank's data only, then averages the two models' raw margins
-(log-odds) to build a global model via FedAvg. Evaluates the two locals vs the
-global on the shared test split to show the global model catches more scams --
-without either bank ever sharing raw customer data.
+model on each bank's data only, then averages the two models' prior-corrected
+margins (log-odds) to build a global model. Evaluates the two locals vs the
+global on the shared test split -- without either bank sharing raw customer
+data -- and against a centralized model trained on the pooled data (what the
+banks would get by sharing data), which is the cost-of-federation baseline.
 
-FedAvg note: averaging the raw margins of two additive tree ensembles is the
-correct FedAvg for heterogeneous (non-aligned) trees. base_score is identical
-(0.5) in both models, so averaging it is a no-op; the averaging therefore lives
-entirely in the prediction-margin mean.
+Averaging note: tree ensembles have no aligned weights to average, so this is
+output-level model averaging (an ensemble of the two locals), the standard
+FedAvg stand-in for non-parametric models. Each local is trained with its own
+scale_pos_weight, which shifts its log-odds by ~log(spw); that shift is
+subtracted before averaging so neither bank's margins dominate.
+
+Privacy: only model outputs and scalar thresholds leave a bank. The global
+model's 1%-FPR threshold is the mean of the threshold each bank picks on its
+*own* val rows -- val data is never pooled.
 
 Run:  python3 src/federated_sim.py
       python3 src/federated_sim.py --smoke
@@ -23,59 +29,37 @@ import time
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import roc_auc_score
 
-from risk_common import FEATURE_COLUMNS, TARGET, load_features
-
-
-def recall_at_fpr(y_true, score, target_fpr, threshold=None):
-    if threshold is None:
-        fpr, tpr, thr = roc_curve(y_true, score)
-        mask = fpr <= target_fpr
-        i = int(np.argmax(np.where(mask, tpr, -1)))
-        threshold = thr[i]
-    pred = score >= threshold
-    pos = y_true == 1
-    recall = float(pred[pos].mean()) if pos.any() else 0.0
-    neg = ~pos
-    fpr = float(pred[neg].mean()) if neg.any() else 0.0
-    return threshold, recall, fpr
+from risk_common import FEATURE_COLUMNS, TARGET, load_features, recall_at_fpr, xgb_params
 
 
 def train_local(Xtr, ytr, Xva, yva, seed):
     pos = int(ytr.sum())
     neg = int(len(ytr) - pos)
     spw = neg / max(pos, 1)
-    model = xgb.XGBClassifier(
-        objective="binary:logistic",
-        eval_metric="aucpr",
-        tree_method="hist",
-        n_estimators=400,
-        max_depth=6,
-        learning_rate=0.1,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        scale_pos_weight=spw,
-        random_state=seed,
-        n_jobs=-1,
-        early_stopping_rounds=40,
-    )
+    model = xgb.XGBClassifier(**xgb_params(spw, seed))
     model.fit(Xtr, ytr, eval_set=[(Xva, yva)], verbose=False)
     return model, spw
 
 
-def fedavg(model_a, model_b, X):
-    """Global score = sigmoid(mean of the two models' raw margins)."""
+def fedavg(model_a, spw_a, model_b, spw_b, X):
+    """Global score = sigmoid(mean of the two prior-corrected margins)."""
     m = (
-        model_a.predict(X, output_margin=True)
-        + model_b.predict(X, output_margin=True)
+        model_a.predict(X, output_margin=True) - np.log(spw_a)
+        + model_b.predict(X, output_margin=True) - np.log(spw_b)
     ) / 2.0
     return 1.0 / (1.0 + np.exp(-m))
 
 
-def evaluate(y_val, p_val, y_test, p_test):
-    """AUROC on test + recall@1%FPR (threshold chosen at 1% FPR on val)."""
+def val_threshold(y_val, p_val):
+    """Threshold at 1% FPR on one val set."""
     thr, _, _ = recall_at_fpr(y_val, p_val, 0.01, None)
+    return thr
+
+
+def evaluate(thr, y_test, p_test):
+    """AUROC + recall/FPR on test at a threshold already chosen on val."""
     _, recall, fpr = recall_at_fpr(y_test, p_test, 0.01, thr)
     return roc_auc_score(y_test, p_test), recall, thr, fpr
 
@@ -114,23 +98,32 @@ def run(args) -> int:
     model_a, spw_a = train_local(Xa_tr, ya_tr, Xa_va, ya_va, args.seed)
     model_b, spw_b = train_local(Xb_tr, yb_tr, Xb_va, yb_va, args.seed)
 
-    # Shared evaluation sets = union of both banks' val/test rows.
-    Xva = pd.concat([Xa_va, Xb_va], ignore_index=True)
-    yva = np.concatenate([ya_va, yb_va])
+    # Shared test set = union of both banks' test rows (evaluation only).
     Xte = pd.concat([Xa_te, Xb_te], ignore_index=True)
     yte = np.concatenate([ya_te, yb_te])
 
-    p_a_va = model_a.predict_proba(Xa_va)[:, 1]
-    p_b_va = model_b.predict_proba(Xb_va)[:, 1]
-    p_g_va = fedavg(model_a, model_b, Xva)
+    thr_a = val_threshold(ya_va, model_a.predict_proba(Xa_va)[:, 1])
+    thr_b = val_threshold(yb_va, model_b.predict_proba(Xb_va)[:, 1])
+    # Global threshold: each bank scores the global model on its own val only;
+    # just the two scalar thresholds are shared and averaged.
+    thr_g = float(np.mean([
+        val_threshold(ya_va, fedavg(model_a, spw_a, model_b, spw_b, Xa_va)),
+        val_threshold(yb_va, fedavg(model_a, spw_a, model_b, spw_b, Xb_va)),
+    ]))
 
-    p_a_te = model_a.predict_proba(Xte)[:, 1]
-    p_b_te = model_b.predict_proba(Xte)[:, 1]
-    p_g_te = fedavg(model_a, model_b, Xte)
+    auc_a, rec_a, _, fpr_a = evaluate(thr_a, yte, model_a.predict_proba(Xte)[:, 1])
+    auc_b, rec_b, _, fpr_b = evaluate(thr_b, yte, model_b.predict_proba(Xte)[:, 1])
+    auc_g, rec_g, _, fpr_g = evaluate(thr_g, yte, fedavg(model_a, spw_a, model_b, spw_b, Xte))
 
-    auc_a, rec_a, thr_a, fpr_a = evaluate(ya_va, p_a_va, yte, p_a_te)
-    auc_b, rec_b, thr_b, fpr_b = evaluate(yb_va, p_b_va, yte, p_b_te)
-    auc_g, rec_g, thr_g, fpr_g = evaluate(yva, p_g_va, yte, p_g_te)
+    # Centralized baseline: one model on the pooled data (requires data sharing).
+    Xpool_va = pd.concat([Xa_va, Xb_va], ignore_index=True)
+    ypool_va = np.concatenate([ya_va, yb_va])
+    model_c, _ = train_local(
+        pd.concat([Xa_tr, Xb_tr], ignore_index=True), np.concatenate([ya_tr, yb_tr]),
+        Xpool_va, ypool_va, args.seed,
+    )
+    thr_c = val_threshold(ypool_va, model_c.predict_proba(Xpool_va)[:, 1])
+    auc_c, rec_c, _, fpr_c = evaluate(thr_c, yte, model_c.predict_proba(Xte)[:, 1])
 
     print(f"[federated] customers: Bank A={mid} Bank B={len(senders) - mid} "
           f"(total {len(senders)})")
@@ -140,20 +133,40 @@ def run(args) -> int:
     hdr = f"{'model':<18}{'AUROC':>9}{'recall@1%FPR':>15}{'thr':>10}{'fpr':>9}"
     print(hdr)
     print("-" * len(hdr))
-    print(f"{'Bank A (local)':<18}{auc_a:>9.4f}{rec_a:>15.4f}{thr_a:>10.4f}{fpr_a:>9.4f}")
-    print(f"{'Bank B (local)':<18}{auc_b:>9.4f}{rec_b:>15.4f}{thr_b:>10.4f}{fpr_b:>9.4f}")
-    print(f"{'Global (FedAvg)':<18}{auc_g:>9.4f}{rec_g:>15.4f}{thr_g:>10.4f}{fpr_g:>9.4f}")
+    print(f"{'Bank A (local)':<18}{auc_a:>9.4f}{rec_a:>15.4f}{thr_a:>10.2e}{fpr_a:>9.4f}")
+    print(f"{'Bank B (local)':<18}{auc_b:>9.4f}{rec_b:>15.4f}{thr_b:>10.2e}{fpr_b:>9.4f}")
+    print(f"{'Global (FedAvg)':<18}{auc_g:>9.4f}{rec_g:>15.4f}{thr_g:>10.2e}{fpr_g:>9.4f}")
+    print(f"{'Pooled (no fed.)':<18}{auc_c:>9.4f}{rec_c:>15.4f}{thr_c:>10.2e}{fpr_c:>9.4f}")
 
-    win_auc = auc_g >= max(auc_a, auc_b)
-    win_rec = rec_g >= max(rec_a, rec_b)
-    print(f"[federated] Global vs best local -> AUROC {'WIN' if win_auc else 'lose'} "
+    res_auc = outcome(auc_g, max(auc_a, auc_b))
+    res_rec = outcome(rec_g, max(rec_a, rec_b))
+    print(f"[federated] Global vs best local -> AUROC {res_auc} "
           f"({auc_g:.4f} vs {max(auc_a, auc_b):.4f}), "
-          f"recall {'WIN' if win_rec else 'lose'} ({rec_g:.4f} vs {max(rec_a, rec_b):.4f})")
-    print("[federated] conclusion: the FedAvg global model catches more scams than "
-          "either bank alone, without any bank sharing raw customer data "
-          "(only averaged predictions leave each bank).")
+          f"recall {res_rec} ({rec_g:.4f} vs {max(rec_a, rec_b):.4f})")
+    if res_rec == "WIN":
+        verdict = "the FedAvg global model catches more scams than either bank alone"
+    elif res_rec == "TIE":
+        verdict = "the FedAvg global model catches as many scams as the best bank alone"
+    else:
+        verdict = "the FedAvg global model catches fewer scams than the best bank alone"
+    print(f"[federated] conclusion: {verdict}, without any bank sharing raw customer "
+          "data (only model outputs and thresholds leave each bank).")
+    print(f"[federated] cost of federation vs pooled data: AUROC {auc_g - auc_c:+.4f}, "
+          f"recall {rec_g - rec_c:+.4f} (FedAvg {outcome(rec_g, rec_c)} vs pooled)")
+    if outcome(rec_g, rec_c) == "WIN":
+        print("[federated] note: the global model beats even the pooled-data model, so its gain "
+              "over the locals comes from averaging two models (ensembling), not from federation.")
     print(f"[federated] done in {time.time() - t0:.1f}s")
     return 0
+
+
+def outcome(global_score: float, best_local: float, tol: float = 1e-4) -> str:
+    """WIN / TIE / LOSE of the global model vs the best local, at printed precision."""
+    if global_score > best_local + tol:
+        return "WIN"
+    if global_score < best_local - tol:
+        return "LOSE"
+    return "TIE"
 
 
 def main(argv=None) -> int:

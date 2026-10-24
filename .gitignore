@@ -1,5 +1,7 @@
 # Data and models (too large for GitHub)
 data/*.csv
+data/*.parquet
+data/smoke/
 models/*.json
 data/*.sqlite*
 

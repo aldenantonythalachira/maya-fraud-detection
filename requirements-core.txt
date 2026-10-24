@@ -1,6 +1,7 @@
 # Core detector and Streamlit demo; Python 3.12.
 numpy>=2.0,<3
 pandas>=2.2,<3
+pyarrow>=14,<27
 networkx>=3.0,<4
 xgboost>=2.0,<4
 scikit-learn>=1.4,<2
