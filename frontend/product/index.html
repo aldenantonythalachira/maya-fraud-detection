@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <meta name="theme-color" content="#23264f" />
+    <title>MAYA · Payment safety</title>
+    <link rel="manifest" href="/product-static/manifest.webmanifest" />
+    <link rel="stylesheet" href="/product-static/product.css" />
+    <script type="module" src="/product-static/customer.js"></script>
+  </head>
+  <body>
+    <a class="skip" href="#main">Skip to content</a>
+    <div class="app-shell">
+      <header class="header">
+        <a class="brand" href="/app/">MAYA<span class="brand-dot">●</span></a
+        ><button id="language" class="quiet" aria-label="Change language">
+          हिंदी
+        </button>
+      </header>
+      <main id="main" tabindex="-1">
+        <div class="empty" role="status">Opening MAYA…</div>
+      </main>
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button data-nav="home" aria-current="page">Home</button
+        ><button data-nav="activity">Activity</button
+        ><button data-nav="settings">Settings</button>
+      </nav>
+    </div>
+    <p id="announcement" class="sr-only" aria-live="polite"></p>
+    <dialog id="pair-dialog">
+      <h2 id="pair-title">Connect a device</h2>
+      <p id="pair-code" class="pair-code"></p>
+      <p id="pair-help"></p>
+      <button id="copy-code">Copy code</button
+      ><button id="close-dialog" class="quiet">Close</button>
+    </dialog>
+  </body>
+</html>

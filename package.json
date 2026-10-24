@@ -1,0 +1,1 @@
+{"name":"maya-verification","private":true,"scripts":{"test:browser":"node scripts/verify_browser.cjs","format":"prettier --write frontend/product frontend/observer scripts/verify_browser.cjs"},"devDependencies":{"playwright":"1.62.1","prettier":"3.6.2"}}
