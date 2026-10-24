@@ -1,11 +1,22 @@
-"""Regression tests for the universal hold safeguard, independent of model weights."""
-import itertools
-import sys
-import unittest
-from pathlib import Path
+"""The Two-Signal Rule: the universal hold safeguard, the truth table, and
+hard-signal edge cases. Independent of model weights.
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
-from policy import decide
+HoldSafeguardTests is unittest-style; the rest are pytest functions. Run all
+of them with `python -m pytest`.
+"""
+
+from __future__ import annotations
+
+import itertools
+import unittest
+
+import pandas as pd
+import pytest
+
+from conformal import SET_NAMES, SET_UNSURE
+from policy import DEFAULT_THRESHOLDS, SELF_TEST_CASES, decide, hard_signals, run_self_test
+
+UNSURE = SET_NAMES[SET_UNSURE]
 
 
 class HoldSafeguardTests(unittest.TestCase):
@@ -41,5 +52,38 @@ class HoldSafeguardTests(unittest.TestCase):
             decide("typo", dict(n_t=0, e_t=0, z_t=0, pi_t=0, d_R=3))
 
 
-if __name__ == "__main__":
-    unittest.main()
+@pytest.mark.parametrize("case", SELF_TEST_CASES, ids=[c[0] for c in SELF_TEST_CASES])
+def test_truth_table(case):
+    name, cset, feats, soft, amount, action, minutes, analyst, mulehunter = case
+    got = decide(cset, feats, soft, ["r1", "r2", "r3", "r4"], amount, DEFAULT_THRESHOLDS, mulehunter)
+    assert got == {
+        "action": action,
+        "reasons": ["r1", "r2", "r3"],  # capped at 3
+        "auto_release_minutes": minutes,
+        "requires_analyst": analyst,
+    }
+
+
+def test_self_test_passes():
+    assert run_self_test()
+
+
+def test_zc_falls_back_to_z_when_absent():
+    base = {"n_t": 0.0, "e_t": 0.0, "pi_t": 0.0, "d_R": 3.0}
+    assert hard_signals({**base, "z_t": 3.0})["zc_t"] is True
+    assert hard_signals({**base, "z_t": 0.0})["zc_t"] is False
+    assert hard_signals({**base, "z_t": 0.0, "zc_t": 5.0})["zc_t"] is True
+    assert hard_signals({**base, "z_t": 3.0, "zc_t": 3.0})["zc_t"] is False  # own bar (4.2)
+
+
+def test_split_payment_is_one_history_group():
+    # zc_t is a payment-history signal: alone it cannot hold even a {scam} set
+    feats = {"n_t": 0.0, "e_t": 0.0, "z_t": 1.0, "zc_t": 5.0, "pi_t": 0.0, "d_R": 3.0}
+    assert decide("{scam}", feats)["action"] == "nudge"
+    assert decide("{scam}", {**feats, "d_R": 0.0})["action"] == "hold"
+
+
+def test_hard_signals_accept_a_series_with_nan():
+    row = pd.Series({"n_t": 0.0, "e_t": float("nan"), "z_t": float("nan"),
+                     "zc_t": float("nan"), "pi_t": 0.0, "d_R": 3.0})
+    assert not any(hard_signals(row).values())

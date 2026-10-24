@@ -4,6 +4,12 @@ Trains on the train split, early-stops on val, evaluates on test, and reports
 recall at a 1% false-positive rate (threshold chosen on val, reported on test).
 Saves models/xgb_model.json and models/model_meta.json.
 
+Adversarial training (default; --no-augment to disable): evasive copies of the
+*train* scams (evasion.TRAIN_ATTACKS: split_2, split_4, extra_hop) are added as
+extra positives, each attack family weighted 1 per original scam, and
+scale_pos_weight is computed on the total positive weight. val / calib / test
+are never augmented, so all reported metrics are on real transactions.
+
 Run:  python3 src/train_xgb.py
       python3 src/train_xgb.py --smoke
 """
@@ -16,29 +22,20 @@ import time
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 import xgboost as xgb
-from sklearn.metrics import average_precision_score, roc_auc_score, roc_curve
+from sklearn.metrics import average_precision_score, roc_auc_score
 
-from risk_common import FEATURE_COLUMNS, TARGET, load_features
-
-
-def recall_at_fpr(y_true, score, target_fpr, threshold):
-    if threshold is None:
-        fpr, tpr, thr = roc_curve(y_true, score)
-        mask = fpr <= target_fpr
-        i = int(np.argmax(np.where(mask, tpr, -1)))
-        threshold = thr[i]
-    pred = score >= threshold
-    pos = y_true == 1
-    recall = float(pred[pos].mean()) if pos.any() else 0.0
-    neg = ~pos
-    fpr = float(pred[neg].mean()) if neg.any() else 0.0
-    return threshold, recall, fpr
+from evasion import HELPER_COLUMNS, TRAIN_ATTACKS, augment
+from risk_common import (
+    FEATURE_COLUMNS, SMOKE_FEATURES, SMOKE_MODEL, TARGET, XGB_DEFAULTS, load_features,
+    recall_at_fpr, xgb_params,
+)
 
 
 def run(args) -> None:
     t0 = time.time()
-    df = load_features(args.features)
+    df = load_features(args.features, columns=FEATURE_COLUMNS + (HELPER_COLUMNS if args.augment else []))
     tr = df[df["split"] == "train"]
     va = df[df["split"] == "val"]
     te = df[df["split"] == "test"]
@@ -53,23 +50,25 @@ def run(args) -> None:
 
     pos = int(ytr.sum())
     neg = int(len(ytr) - pos)
-    spw = neg / max(pos, 1)
+    weight = np.ones(len(ytr))
+    n_aug = 0
+    if args.augment:
+        aug, w_aug = augment(tr[tr[TARGET] == 1][FEATURE_COLUMNS + HELPER_COLUMNS])
+        n_aug = len(aug)
+        Xtr = pd.concat([Xtr, aug[FEATURE_COLUMNS].astype("float32")], ignore_index=True)
+        ytr = np.concatenate([ytr, np.ones(n_aug, np.int8)])
+        weight = np.concatenate([weight, w_aug])
+    spw = neg / max(float(weight[ytr == 1].sum()), 1.0)
 
-    model = xgb.XGBClassifier(
-        objective="binary:logistic",
-        eval_metric="aucpr",
-        tree_method="hist",
+    model = xgb.XGBClassifier(**xgb_params(
+        spw, args.seed,
         n_estimators=args.n_estimators,
         max_depth=args.max_depth,
         learning_rate=args.lr,
         subsample=args.subsample,
         colsample_bytree=args.colsample,
-        scale_pos_weight=spw,
-        random_state=args.seed,
-        n_jobs=-1,
-        early_stopping_rounds=40,
-    )
-    model.fit(Xtr, ytr, eval_set=[(Xva, yva)], verbose=False)
+    ))
+    model.fit(Xtr, ytr, sample_weight=weight, eval_set=[(Xva, yva)], verbose=False)
 
     p_va = model.predict_proba(Xva)[:, 1]
     p_te = model.predict_proba(Xte)[:, 1]
@@ -81,6 +80,10 @@ def run(args) -> None:
     metrics = {
         "scale_pos_weight": float(spw),
         "train_rows": int(len(tr)), "train_pos": pos,
+        "adversarial_attacks": list(TRAIN_ATTACKS) if args.augment else [],
+        "adversarial_rows": n_aug,
+        "val_rows": int(len(va)), "val_pos": int(yva.sum()),
+        "calib_rows_held_out": int((df["split"] == "calib").sum()),
         "val_auroc": float(roc_auc_score(yva, p_va)),
         "val_auprc": float(average_precision_score(yva, p_va)),
         "test_auroc": float(roc_auc_score(yte, p_te)),
@@ -106,7 +109,8 @@ def run(args) -> None:
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps(metrics, indent=2))
 
-    print(f"[train_xgb] train={len(tr):,} (pos={pos}) val={len(va):,} test={len(te):,} spw={spw:.1f}")
+    print(f"[train_xgb] train={len(tr):,} (pos={pos}, +{n_aug:,} adversarial) val={len(va):,} "
+          f"test={len(te):,} spw={spw:.1f} (calib={metrics['calib_rows_held_out']:,} held out for conformal)")
     print(f"[train_xgb] val  AUROC={metrics['val_auroc']:.4f} AUPRC={metrics['val_auprc']:.4f}")
     print(f"[train_xgb] test AUROC={metrics['test_auroc']:.4f} AUPRC={metrics['test_auprc']:.4f}")
     print(f"[train_xgb] recall@1%FPR (val thr={thr:.4f}) on test = {rec_te:.4f} "
@@ -117,19 +121,24 @@ def run(args) -> None:
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description="Train the XGBoost risk model.")
-    ap.add_argument("--features", default="data/features.csv")
+    ap.add_argument("--features", default=None,
+                    help="default: data/features.csv (data/smoke/features.csv with --smoke)")
     ap.add_argument("--model-out", default="models/xgb_model.json")
     ap.add_argument("--meta-out", default="models/model_meta.json")
-    ap.add_argument("--n-estimators", type=int, default=400)
-    ap.add_argument("--max-depth", type=int, default=6)
-    ap.add_argument("--lr", type=float, default=0.1)
-    ap.add_argument("--subsample", type=float, default=0.8)
-    ap.add_argument("--colsample", type=float, default=0.8)
+    ap.add_argument("--n-estimators", type=int, default=XGB_DEFAULTS["n_estimators"])
+    ap.add_argument("--max-depth", type=int, default=XGB_DEFAULTS["max_depth"])
+    ap.add_argument("--lr", type=float, default=XGB_DEFAULTS["learning_rate"])
+    ap.add_argument("--subsample", type=float, default=XGB_DEFAULTS["subsample"])
+    ap.add_argument("--colsample", type=float, default=XGB_DEFAULTS["colsample_bytree"])
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--no-augment", dest="augment", action="store_false",
+                    help="skip adversarial training on evasive copies of train scams")
     args = ap.parse_args(argv)
+    if args.features is None:
+        args.features = SMOKE_FEATURES if args.smoke else "data/features.csv"
     if args.smoke:
-        args.model_out = "models/xgb_model_smoke.json"
+        args.model_out = SMOKE_MODEL
         args.meta_out = "models/model_meta_smoke.json"
     run(args)
 

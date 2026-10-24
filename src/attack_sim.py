@@ -1,14 +1,32 @@
-"""Maya red-teaming: prove robustness to AI-rewritten scam scripts.
+"""Maya red-teaming: measure how the risk model holds up against evasive scammers.
 
-The Maya PDF states that "AI rewording cut text detectors' catch rate by 88%".
-This script simulates that attack against the Maya stack: it takes 100 real scam
-transactions from the test split, runs them through the XGBoost model, and then
-simulates an attacker rewording the chat scripts behind each scam. Because Maya
-scores the *journey* (money flow, amount climbs, graph hops -- n_t/e_t/z_t/pi_t/
-d_R) and not the chat text, its catch rate barely moves, while a phrase-matching
-"text-only detector" collapses by the PDF's 88%.
+Two kinds of attack against real scam transactions from the test split:
 
-Run:  python3 src/attack_sim.py
+1. **Text rewording** (the Maya PDF's "AI rewording cut text detectors' catch
+   rate by 88%"). Maya's 18 features are journey/money-flow only -- no chat text
+   is a model input -- so rewording leaves its score unchanged *by construction*.
+   This row is an architectural illustration, not an empirical test. The
+   phrase-matching "text-only detector" contrast is likewise illustrative: its
+   88% collapse is set by REWORD_EVASION (the PDF figure), not measured.
+
+2. **Adaptive journey attacks** (the real test): the scammer changes the parts
+   of the journey they control (split_2/4/10, extra_hop, no_probes, and "all"
+   = split_4 + extra_hop + no_probes), with features recomputed by the
+   features.py formulas -- see src/evasion.py for the exact math. A split scam
+   counts as caught if ANY of its parts is caught (one hold stops it). Each
+   attack rescores the perturbed rows with the real model; catch rate = recall
+   at the val-chosen 1%-FPR threshold in models/model_meta.json.
+   train_xgb.py adversarially trains on evasion.TRAIN_ATTACKS (split_2,
+   split_4, extra_hop); split_10 and "all" are held out, so their rows measure
+   robustness to evasions the model never saw.
+   The model's own feature list is used, so an older model (e.g. the 18-feature
+   one) can be attacked with --model/--meta for a before/after comparison.
+
+Exit code: 0 iff Maya's rewording drop < --drop-target; with --strict, every
+adaptive attack's drop must also be < --drop-target.
+
+Run:  python src/attack_sim.py
+      python src/attack_sim.py --strict
 """
 
 from __future__ import annotations
@@ -20,6 +38,7 @@ from pathlib import Path
 import numpy as np
 import xgboost as xgb
 
+from evasion import ATTACKS, HELPER_COLUMNS, TRAIN_ATTACKS
 from risk_common import FEATURE_COLUMNS, TARGET, load_features
 
 # The PDF's headline figure: how much AI rewording cut *text* detectors.
@@ -91,61 +110,74 @@ def run(args) -> int:
     model.load_model(args.model)
     meta = json.loads(Path(args.meta).read_text())
     threshold = float(meta["val_threshold_at_1pct_fpr"])
-    qhat = json.loads(Path(args.conformal).read_text())["qhat"]
 
-    df = load_features(args.features)
+    cols = model.get_booster().feature_names or FEATURE_COLUMNS
+    df = load_features(args.features, columns=FEATURE_COLUMNS + HELPER_COLUMNS)
     te = df[df["split"] == "test"]
     scams = te[te[TARGET] == 1]
     if args.n_attacks and len(scams) > args.n_attacks:
         scams = scams.sample(n=args.n_attacks, random_state=args.seed).sort_values("txn_id")
     n = len(scams)
     ids = scams["txn_id"].to_numpy(np.int64)
-    X = scams[FEATURE_COLUMNS]
+    X = scams[FEATURE_COLUMNS + HELPER_COLUMNS]
 
-    p_scam = model.predict_proba(X)[:, 1]
+    p_scam = model.predict_proba(X[cols])[:, 1]
     maya_before = catch_rate(p_scam, threshold)
-    # Re-evaluate on identical features: rewording changes chat text only, which
-    # is not a model input, so Maya's score is unchanged.
-    maya_after = catch_rate(p_scam, threshold)
-    maya_drop = (maya_before - maya_after) * 100.0
 
-    # Text-only detector: original scripts all carry triggers; the reworder
-    # strips triggers from REWORD_EVASION of them.
+    # Text-only detector (illustrative): the reworder strips triggers from
+    # REWORD_EVASION of the scripts.
     scripts = [build_script(int(i)) for i in ids]
     keep = int(round(n * (1.0 - REWORD_EVASION)))
     reworded = [reword(s, idx >= n - keep) for idx, s in enumerate(scripts)]
     text_before = sum(text_detector(s) for s in scripts) / n
     text_after = sum(text_detector(s) for s in reworded) / n
-    text_drop = (text_before - text_after) * 100.0
 
     print("=" * 78)
-    print(f"[attack_sim] {n} AI-rewording attacks against the Maya risk model (test split)")
+    print(f"[attack_sim] {n} test-split scam txns, operating threshold (val @1%FPR) = {threshold:.4f}, "
+          f"model features = {len(cols)}")
     print("=" * 78)
-    print(f"operating threshold (val @1%FPR) = {threshold:.4f}   qhat = {qhat:.6f}")
-    print(f"Maya features (none are text): {FEATURE_COLUMNS}")
+    print(f"{'attack':<28}{'catch before':>14}{'catch after':>13}{'drop (pts)':>13}")
+    print("-" * 68)
+    print("text rewording (illustrative, not a model input):")
+    print(f"  {'text-only detector':<26}{text_before * 100:>13.1f}%{text_after * 100:>12.1f}%"
+          f"{(text_before - text_after) * 100:>12.1f}")
+    print(f"  {'Maya (no text features)':<26}{maya_before * 100:>13.1f}%{maya_before * 100:>12.1f}%{0.0:>12.1f}")
+    print("adaptive journey attacks (measured):")
+    drops = {}
+    for name, attack in ATTACKS.items():
+        # Caught if any of the scammer's payments is flagged.
+        p_after = np.max([model.predict_proba(part[cols])[:, 1] for part in attack(X)], axis=0)
+        after = catch_rate(p_after, threshold)
+        drops[name] = (maya_before - after) * 100.0
+        tag = "" if name in TRAIN_ATTACKS else "  (held out of adversarial training)"
+        print(f"  {'Maya / ' + name:<26}{maya_before * 100:>13.1f}%{after * 100:>12.1f}%"
+              f"{drops[name]:>12.1f}{tag}")
     print()
-    print(f"{'detector':<22}{'catch before':>14}{'catch after':>13}{'drop (pts)':>13}")
-    print(f"{'-'*22:>22}{'-'*14:>14}{'-'*13:>13}{'-'*13:>13}")
-    print(f"{'text-only (phrases)':<22}{text_before*100:>13.1f}%{text_after*100:>12.1f}%{text_drop:>12.1f}")
-    print(f"{'Maya (journey feats)':<22}{maya_before*100:>13.1f}%{maya_after*100:>12.1f}%{maya_drop:>12.1f}")
-    print()
-    verdict = maya_drop < args.drop_target
+
+    worst = max(drops, key=drops.get)
+    print(f"[attack_sim] worst adaptive attack: {worst} (-{drops[worst]:.1f} pts)")
+    failed = [k for k, v in drops.items() if v >= args.drop_target]
+    verdict = not (args.strict and failed)
+    detail = (f"adaptive attacks over the {args.drop_target:.1f}-pt target: {', '.join(failed)}"
+              if failed else f"every adaptive drop < {args.drop_target:.1f} pts")
     print(f"[attack_sim] VERDICT: {'PASS' if verdict else 'FAIL'} "
-          f"(Maya drop {maya_drop:.1f} pts {'<' if verdict else '>='} {args.drop_target:.1f} pts target)")
+          f"({'strict' if args.strict else 'rewording-only; pass --strict to gate on adaptive attacks'}; {detail})")
     print("=" * 78)
     return 0 if verdict else 1
 
 
 def main(argv=None) -> int:
-    ap = argparse.ArgumentParser(description="Red-team the Maya model with AI-rewritten scripts.")
+    ap = argparse.ArgumentParser(description="Red-team the Maya model with rewording and adaptive journey attacks.")
     ap.add_argument("--features", default="data/features.csv")
     ap.add_argument("--model", default="models/xgb_model.json")
     ap.add_argument("--meta", default="models/model_meta.json")
-    ap.add_argument("--conformal", default="models/conformal.json")
-    ap.add_argument("--n-attacks", type=int, default=100)
+    ap.add_argument("--n-attacks", type=int, default=0,
+                    help="sample this many test scams (default 0 = all)")
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--drop-target", type=float, default=10.0,
                     help="max acceptable Maya catch-rate drop in points")
+    ap.add_argument("--strict", action="store_true",
+                    help="also fail if any adaptive journey attack drops >= --drop-target")
     args = ap.parse_args(argv)
     return run(args)
 

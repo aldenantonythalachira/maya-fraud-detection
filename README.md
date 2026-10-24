@@ -8,15 +8,22 @@ two-group intervention policy. No real payments or external fraud reports occur.
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r requirements-core.txt
-.\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt   # core + pytest
+.\.venv\Scripts\python.exe -m pytest -v
 .\.venv\Scripts\python.exe src/policy.py --self-test
 .\.venv\Scripts\python.exe -m streamlit run ui/app.py
 ```
 
-On macOS/Linux use `.venv/bin/python` for the interpreter. The core requirements
-exclude the optional PyTorch/GNN experiment; `requirements.txt` retains the full
+On macOS/Linux use `.venv/bin/python` for the interpreter. `requirements-dev.txt`
+is `requirements-core.txt` plus pytest. The core requirements exclude the
+optional PyTorch/GNN experiment; `requirements.txt` retains the full
 experimental dependencies.
+
+`python -m pytest` runs every test, including the unittest-style ones and an
+end-to-end smoke pipeline (generator → features with the exact brute-force check
+→ train → conformal → `policy.py --eval`) in a temp dir. `tests/test_ui.py`
+drives `ui/app.py` with Streamlit's AppTest and is skipped unless the trained
+`models/` exist.
 
 ## Rebuild a small synthetic baseline
 
@@ -24,16 +31,35 @@ Run from the repository root. These are smoke artifacts, not the submitted B4
 experiment or evidence of real-world accuracy.
 
 ```text
-python src/journey_generator.py --smoke --out-dir data
-python src/features.py --days 30
-python src/train_xgb.py
-python src/conformal.py
+python src/journey_generator.py --smoke     # -> data/smoke/
+python src/features.py --smoke
+python src/train_xgb.py --smoke             # -> models/*_smoke.json
+python src/conformal.py --smoke
 ```
 
-Generated CSVs and model JSON files are ignored by Git. Validate generator output
-(`campaign_split_violations=0`, `ref_integrity=True`) and feature output (all
-sample maximum differences are zero). The old UI pins scenario prediction sets;
-live model scores shown alongside them do not drive those scenario decisions.
+Without `--smoke` the same four commands build the full dataset and the
+`models/xgb_model.json` + `models/conformal.json` that the UI loads (~6 min).
+Generated CSV/Parquet and model JSON files are ignored by Git. Validate
+generator output (`campaign_split_violations=0`, `ref_integrity=True`) and
+feature output (all sample maximum differences are zero).
+
+The UI scenarios use features copied from real test-split transactions and, by
+default, the model-implied conformal set drives `decide()`; a sidebar toggle
+pins the scripted sets instead.
+
+## Evaluation commands
+
+```text
+python src/policy.py --eval          # release / nudge / hold rates on the test split
+python src/attack_sim.py --strict    # evasion attacks: split payments, extra mule hop
+python src/federated_sim.py          # two-bank FedAvg vs locals vs pooled data
+python src/gnn_challenger.py         # GraphSAGE mule challenger (needs requirements.txt)
+```
+
+The model is adversarially trained against split payments and extra mule hops
+(`src/evasion.py`); `attack_sim` holds out split_10 and the combined attack.
+These are known, white-box attacks on synthetic data — see `AGENTS.md` for the
+numbers and caveats.
 
 ## Team workflow
 

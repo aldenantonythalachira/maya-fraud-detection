@@ -69,3 +69,27 @@
 - Stage 01 checkpoint contains the review service, claim grammar, debugger,
   regression tests, dependency snapshot and execution plan. Wallet settlement
   remains a later stage, not a claim of this checkpoint.
+
+### Evasion hardening, honest evaluations, pytest suite (branch feature/evasion-hardening)
+
+- Rebased onto main (after the universal hold safeguard and payment review);
+  main's policy semantics are kept unchanged.
+- Risk stack: held-out `calib` split (later half of val days) for conformal;
+  class-conditional (Mondrian) conformal with `qhat_fine` / `qhat_scam`
+  (`conformal.load_conformal()`; old single-`qhat` files still load).
+- Features: past-only anti-evasion features `v_t`, `zc_t`, `ptr_t` (27 model
+  columns), exact brute-force check still 0.0; Parquet twin for fast loading.
+- `zc_t` joins the payment-history group (bar 4.2, ~val legit p99).
+- Adversarial training on split payments / extra mule hop (`src/evasion.py`);
+  `attack_sim.py` now measures real adaptive attacks (worst drop 34.4 -> 3.5
+  pts, split_10 and the combined attack held out of training). Known,
+  white-box attacks on synthetic data only.
+- Honest demos: model-driven UI scenarios from real test transactions;
+  federated sim without pooled val plus a pooled-data baseline; GNN on
+  time-sliced snapshots (only 2 test mules: its AUROC is noise).
+- payment_review updated for the new conformal API and features
+  (POLICY_VERSION payment-review-v2). Behaviour change: the "Rent" demo is now
+  nudged (adapter features are far from the training data).
+- Tests: CI switched to `python -m pytest -v` on requirements-dev.txt (core +
+  pytest); 71 tests + policy self-test pass locally on pandas 3 and on the
+  CI-style requirements. No model or data files committed.

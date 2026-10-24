@@ -9,23 +9,34 @@ strictly past-only, time-aware fraud features for every transaction:
     z_t   unusual amount = log(amount) - median of past log amounts
     pi_t  probing counter = payments <= 10 to the same payee in the last 1 hour
     d_R   min hops (<=2) to a reported account, time-sliced graph
+    v_t   pair velocity = past payments sender -> receiver in the last 24 h
+    zc_t  cumulative unusual amount = log(amount + past 24 h sender -> receiver
+          total) - median of past log amounts (defeats amount splitting)
+    ptr_t pass-through = outflow / inflow of the account in the last 24 h
+          (mule accounts forward what they receive; NaN when no inflow)
 
 Each feature is computed for both endpoints (sender and receiver) and then
-combined as the more anomalous value. Output: data/features.csv with is_scam.
+combined as the more anomalous value. Output: data/features.csv with is_scam,
+plus non-feature helper columns (`pair24`, `in24_*`, `out24_*`: the raw 24 h
+sums behind v_t/zc_t/ptr_t) that attack_sim uses to recompute them exactly.
+24 h window sums use math.fsum so the brute-force check matches bit-for-bit.
 
-Run:  python3 src/features.py --smoke
+Run:  python3 src/features.py --smoke   (reads/writes data/smoke/)
       python3 src/features.py
 """
 
 from __future__ import annotations
 
 import argparse
+import math
 import time
 from bisect import bisect_left, bisect_right, insort
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
+
+SMOKE_DIR = "data/smoke"  # written by journey_generator.py --smoke
 
 DAY = 86400
 W7 = 7 * DAY
@@ -80,6 +91,16 @@ def endpoint_features(tx: pd.DataFrame) -> pd.DataFrame:
     f_g = np.zeros(L, np.float64)
     f_z = np.full(L, np.nan, np.float64)
     f_p = np.zeros(L, np.float64)
+    f_v = np.zeros(L, np.float64)
+    f_pair = np.zeros(L, np.float64)
+    f_zc = np.full(L, np.nan, np.float64)
+    f_in = np.zeros(L, np.float64)
+    f_out = np.zeros(L, np.float64)
+
+    def window_sum(ts_list, amt_list, lo, hi):
+        """(count, fsum) of events with lo < ts < hi."""
+        a, b = bisect_right(ts_list, lo), bisect_left(ts_list, hi)
+        return b - a, math.fsum(amt_list[a:b])
 
     bounds = np.concatenate([[0], np.flatnonzero(np.diff(acct)) + 1, [L]])
     for gi in range(len(bounds) - 1):
@@ -90,6 +111,12 @@ def endpoint_features(tx: pd.DataFrame) -> pd.DataFrame:
         credits: list = []
         small: dict = {}
         seen: set = set()
+        # (counterparty, direction) -> ts / amounts, for the same-direction pair
+        # flow; plus the account's own inflow / outflow history.
+        pair_ts: dict = {}
+        pair_amt: dict = {}
+        flow_ts = ([], [])   # [0] = outgoing, [1] = incoming
+        flow_amt = ([], [])
         j = st
         while j < en:
             T = int(tsv[j])
@@ -120,8 +147,25 @@ def endpoint_features(tx: pd.DataFrame) -> pd.DataFrame:
                     f_p[idx] = bisect_left(lst, T) - bisect_right(lst, T - H1)
                 if gwin:
                     f_g[idx] = 1.0
+                key = (c, dir_in[idx])
+                plst = pair_ts.get(key)
+                if plst is not None:
+                    f_v[idx], f_pair[idx] = window_sum(plst, pair_amt[key], T - DAY, T)
+                if m:
+                    f_zc[idx] = math.log(amt[idx] + f_pair[idx]) - med
+                f_out[idx] = window_sum(flow_ts[0], flow_amt[0], T - DAY, T)[1]
+                f_in[idx] = window_sum(flow_ts[1], flow_amt[1], T - DAY, T)[1]
             for idx in range(j, k):
                 c = cp[idx]
+                key = (c, dir_in[idx])
+                if key in pair_ts:
+                    pair_ts[key].append(T)
+                    pair_amt[key].append(amt[idx])
+                else:
+                    pair_ts[key] = [T]
+                    pair_amt[key] = [amt[idx]]
+                flow_ts[dir_in[idx]].append(T)
+                flow_amt[dir_in[idx]].append(amt[idx])
                 insort(logs, lx[idx])
                 if c not in seen:
                     seen.add(c)
@@ -137,9 +181,13 @@ def endpoint_features(tx: pd.DataFrame) -> pd.DataFrame:
                         lst.append(T)
             j = k
 
+    with np.errstate(divide="ignore", invalid="ignore"):
+        f_ptr = np.where(f_in > 0, f_out / f_in, np.nan)
     ev = pd.DataFrame({
         "txn_id": txid, "side": side, "n_t": f_n, "e_t": f_e,
         "g_t": f_g, "z_t": f_z, "pi_t": f_p,
+        "v_t": f_v, "zc_t": f_zc, "ptr_t": f_ptr,
+        "pair24": f_pair, "in24": f_in, "out24": f_out,
     })
     return ev
 
@@ -217,10 +265,16 @@ def combine(ev: pd.DataFrame, tx: pd.DataFrame, dR_snd: np.ndarray, dR_rcv: np.n
     gs, gr = col(snd, "g_t"), col(rcv, "g_t")
     zs, zr = col(snd, "z_t"), col(rcv, "z_t")
     ps, pr = col(snd, "pi_t"), col(rcv, "pi_t")
+    vs, vr = col(snd, "v_t"), col(rcv, "v_t")
+    zcs, zcr = col(snd, "zc_t"), col(rcv, "zc_t")
+    pts, ptr_ = col(snd, "ptr_t"), col(rcv, "ptr_t")
 
-    z = np.where(np.isnan(zs), zr,
-                 np.where(np.isnan(zr), zs,
-                          np.where(np.abs(zs) >= np.abs(zr), zs, zr)))
+    def larger_abs(a, b):
+        return np.where(np.isnan(a), b,
+                        np.where(np.isnan(b), a,
+                                 np.where(np.abs(a) >= np.abs(b), a, b)))
+
+    z = larger_abs(zs, zr)
 
     sb = is_business[tx["sender_id"].to_numpy(np.int64)]
     rb = is_business[tx["receiver_id"].to_numpy(np.int64)]
@@ -250,6 +304,16 @@ def combine(ev: pd.DataFrame, tx: pd.DataFrame, dR_snd: np.ndarray, dR_rcv: np.n
         "z_t_snd": zs, "z_t_rcv": zr,
         "pi_t_snd": ps, "pi_t_rcv": pr,
         "d_R_snd": dR_snd, "d_R_rcv": dR_rcv,
+        "v_t": np.maximum(vs, vr),
+        "zc_t": larger_abs(zcs, zcr),
+        "ptr_t": np.fmax(pts, ptr_),
+        "v_t_snd": vs, "v_t_rcv": vr,
+        "zc_t_snd": zcs, "zc_t_rcv": zcr,
+        "ptr_t_snd": pts, "ptr_t_rcv": ptr_,
+        # helper columns (not model features): raw 24 h sums for attack_sim
+        "pair24": col(snd, "pair24"),
+        "in24_snd": col(snd, "in24"), "out24_snd": col(snd, "out24"),
+        "in24_rcv": col(rcv, "in24"), "out24_rcv": col(rcv, "out24"),
         "is_scam": tx["is_scam"].to_numpy(),
     })
     return out
@@ -283,13 +347,22 @@ def brute_force(tx: pd.DataFrame, sample: pd.DataFrame, is_business: np.ndarray)
                          ((past["sender_id"] == cp) & (past["receiver_id"] == e)))
             pi = int((pair_mask.to_numpy() & (past["amount"] <= 10).to_numpy()
                       & (past["ts_int"] > T - H1).to_numpy()).sum())
+            win = past[past["ts_int"] > T - DAY]
+            pair = win[(win["sender_id"] == s) & (win["receiver_id"] == r)]["amount"]
+            v_t, pair_sum = len(pair), math.fsum(pair)
+            zc_t = (math.log(x + pair_sum) - float(np.median(np.log(past["amount"].to_numpy())))
+                    if len(past) else np.nan)
+            in24 = math.fsum(win[win["receiver_id"] == e]["amount"])
+            out24 = math.fsum(win[win["sender_id"] == e]["amount"])
+            ptr_t = out24 / in24 if in24 > 0 else np.nan
             credits = past[past["receiver_id"] == e]
             g = 0
             for cr in credits.itertuples(index=False):
                 if cr.ts_int > T - W7 and int(first.get(cr.sender_id, -1)) == int(cr.ts_int):
                     g = 1
                     break
-            vals[side] = dict(n_t=n_t, e_t=e_t, z_t=z_t, pi_t=pi, g_t=g)
+            vals[side] = dict(n_t=n_t, e_t=e_t, z_t=z_t, pi_t=pi, g_t=g,
+                              v_t=v_t, zc_t=zc_t, ptr_t=ptr_t)
         s_v, r_v = vals["snd"], vals["rcv"]
         sb, rb = bool(is_business[s]), bool(is_business[r])
         if (not sb) and rb:
@@ -298,8 +371,14 @@ def brute_force(tx: pd.DataFrame, sample: pd.DataFrame, is_business: np.ndarray)
             n_t, e_t = r_v["n_t"], r_v["e_t"]
         else:
             n_t, e_t = max(s_v["n_t"], r_v["n_t"]), np.fmax(s_v["e_t"], r_v["e_t"])
-        z = s_v["z_t"] if (np.isnan(r_v["z_t"]) or (not np.isnan(s_v["z_t"]) and abs(s_v["z_t"]) >= abs(r_v["z_t"]))) else r_v["z_t"]
+        def larger_abs(a, b):
+            return a if (np.isnan(b) or (not np.isnan(a) and abs(a) >= abs(b))) else b
+
+        z = larger_abs(s_v["z_t"], r_v["z_t"])
         rows.append(dict(
+            v_t=max(s_v["v_t"], r_v["v_t"]),
+            zc_t=larger_abs(s_v["zc_t"], r_v["zc_t"]),
+            ptr_t=np.fmax(s_v["ptr_t"], r_v["ptr_t"]),
             txn_id=row.txn_id,
             n_t=n_t,
             e_t=e_t,
@@ -319,9 +398,9 @@ def validate(tx: pd.DataFrame, feats: pd.DataFrame, n_days: int, split_fracs: tu
     bf = bf.set_index("txn_id")
     common = bf.index
     checks = {}
-    for c in ["n_t", "pi_t", "g_t"]:
+    for c in ["n_t", "pi_t", "g_t", "v_t"]:
         checks[c] = float(np.abs(f.loc[common, c].to_numpy() - bf[c].to_numpy()).max())
-    for c in ["e_t", "z_t"]:
+    for c in ["e_t", "z_t", "zc_t", "ptr_t"]:
         a = f.loc[common, c].to_numpy()
         b = bf[c].to_numpy()
         both_nan = np.isnan(a) & np.isnan(b)
@@ -331,7 +410,8 @@ def validate(tx: pd.DataFrame, feats: pd.DataFrame, n_days: int, split_fracs: tu
     report["max_abs_diff_sample"] = checks
     report["is_scam_rate"] = float(feats["is_scam"].mean())
     report["scam_stats"] = feats.groupby("split")["is_scam"].agg(["size", "sum", "mean"]).to_dict()
-    report["feature_nan_frac"] = {c: float(feats[c].isna().mean()) for c in ["n_t", "e_t", "g_t", "z_t", "pi_t", "d_R"]}
+    report["feature_nan_frac"] = {c: float(feats[c].isna().mean())
+                                  for c in ["n_t", "e_t", "g_t", "z_t", "pi_t", "d_R", "v_t", "zc_t", "ptr_t"]}
     report["d_R_dist"] = feats["d_R"].value_counts().sort_index().to_dict()
     report["rows"] = int(len(feats))
     return report
@@ -355,29 +435,33 @@ def run(args) -> None:
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     feats.to_csv(out, index=False)
+    # Fast-load copy; risk_common.load_features() prefers it while it is fresh.
+    feats.to_parquet(out.with_suffix(".parquet"), index=False)
 
     print(f"[features] rows={len(feats):,} accounts={acc_count} scam_rate={report['is_scam_rate']:.5f}")
     print(f"[features] sample max|diff|: {report['max_abs_diff_sample']}")
     print(f"[features] nan_frac: {report['feature_nan_frac']}")
     print(f"[features] d_R dist: {report['d_R_dist']}")
-    print(f"[features] wrote {out.resolve()} ({time.time() - t0:.1f}s)")
+    print(f"[features] wrote {out.resolve()} (+ .parquet) ({time.time() - t0:.1f}s)")
 
 
 def main(argv=None) -> None:
     ap = argparse.ArgumentParser(description="Build past-only fraud features.")
-    ap.add_argument("--txns", default="data/transactions.csv")
-    ap.add_argument("--edges", default="data/graph_edges.csv")
-    ap.add_argument("--labels", default="data/labels.csv")
-    ap.add_argument("--out", default="data/features.csv")
-    ap.add_argument("--days", type=int, default=120)
-    ap.add_argument("--smoke", action="store_true")
+    ap.add_argument("--txns", default=None, help="default: <data dir>/transactions.csv")
+    ap.add_argument("--edges", default=None, help="default: <data dir>/graph_edges.csv")
+    ap.add_argument("--labels", default=None, help="default: <data dir>/labels.csv")
+    ap.add_argument("--out", default=None, help="default: <data dir>/features.csv")
+    ap.add_argument("--days", type=int, default=None, help="default: 120 (30 with --smoke)")
+    ap.add_argument("--smoke", action="store_true",
+                    help="use data/smoke/ (from journey_generator.py --smoke) instead of data/")
     args = ap.parse_args(argv)
-    if args.smoke:
-        args.txns = "/tmp/opencode/maya_smoke/transactions.csv"
-        args.edges = "/tmp/opencode/maya_smoke/graph_edges.csv"
-        args.labels = "/tmp/opencode/maya_smoke/labels.csv"
-        args.out = "/tmp/opencode/maya_smoke/features.csv"
-        args.days = 30
+    data_dir = Path(SMOKE_DIR if args.smoke else "data")
+    args.txns = args.txns or str(data_dir / "transactions.csv")
+    args.edges = args.edges or str(data_dir / "graph_edges.csv")
+    args.labels = args.labels or str(data_dir / "labels.csv")
+    args.out = args.out or str(data_dir / "features.csv")
+    if args.days is None:
+        args.days = 30 if args.smoke else 120
     run(args)
 
 

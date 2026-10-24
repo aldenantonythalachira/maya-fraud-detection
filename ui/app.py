@@ -1,10 +1,12 @@
 """Maya -- Streamlit demo UI for the Phase 4 action policy engine.
 
 Simulates a UPI payment screen and shows Maya's real-time intervention. Four
-hardcoded scenarios exercise every branch of the Two-Signal Rule. The decision
-math is produced by the *real* src/policy.py `decide()` (imported), and the real
-models/xgb_model.json + models/conformal.json are loaded to show the live model
-score alongside each scenario's pinned conformal set.
+scenarios exercise every branch of the Two-Signal Rule. Each scenario's 18
+features are copied from a real test-split transaction (`source_txn`), scored
+live by models/xgb_model.json, turned into a conformal set with
+models/conformal.json, and passed to the *real* src/policy.py `decide()`
+together with live SHAP reasons. A sidebar toggle can pin each scenario's
+scripted set instead (the pre-model demo behaviour).
 
 Run from the repo root:
     streamlit run ui/app.py
@@ -13,6 +15,7 @@ Run from the repo root:
 from __future__ import annotations
 
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -24,7 +27,9 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from conformal import SET_FINE, SET_NAMES, SET_SCAM, SET_UNSURE, classify as conformal_classify
+from conformal import (
+    SET_FINE, SET_NAMES, SET_SCAM, SET_UNSURE, classify as conformal_classify, load_conformal,
+)
 from integrations import check_fri, check_mulehunter, file_1930_report
 from policy import DEFAULT_THRESHOLDS, active_signals, decide
 from risk_common import ENGLISH_REASONS, FEATURE_COLUMNS
@@ -65,12 +70,13 @@ def load_json(path: str) -> dict:
     return json.loads(Path(path).read_text())
 
 
-def synthesized_matrix(feats6: dict) -> pd.DataFrame:
-    """Expand the 6 combined features into the model's 18-col row."""
+def synthesized_matrix(feats: dict) -> pd.DataFrame:
+    """The model's 18-col row: used as-is when all 18 are given (scenarios),
+    otherwise the 6 combined features are mirrored into `_snd`/`_rcv` (sandbox)."""
     row = {}
     for col in FEATURE_COLUMNS:
         base = col.replace("_snd", "").replace("_rcv", "")
-        row[col] = float(feats6.get(base, 0.0))
+        row[col] = float(feats.get(col, feats.get(base, 0.0)))
     return pd.DataFrame([row], columns=FEATURE_COLUMNS).astype("float32")
 
 
@@ -78,19 +84,53 @@ def live_score(model, feats6: dict) -> float:
     return float(model.predict_proba(synthesized_matrix(feats6))[:, 1][0])
 
 
-def live_shap(model, feats6: dict):
-    """Real SHAP top-3 for the synthesized row (empty list on any failure)."""
+def live_shap(model, feats: dict):
+    """Real SHAP rows for the synthesized row, all 18 by |SHAP| (empty list on any failure)."""
     try:
         from reasons import make_explainer, native_contrib, shap_matrix, top_reasons
 
-        X = synthesized_matrix(feats6)
+        X = synthesized_matrix(feats)
         try:
             sv = shap_matrix(make_explainer(model), X)[0]
         except Exception:
             sv = native_contrib(model, X)[0]
-        return top_reasons(sv)
+        return top_reasons(sv, k=len(FEATURE_COLUMNS))
     except Exception:
         return []
+
+
+def in_risky_range(base: str, value: float, thr=DEFAULT_THRESHOLDS) -> bool:
+    """True when the feature value itself is anomalous (same bars as the policy's
+    hard signals), so a reason's English text is actually true for this txn."""
+    checks = {
+        "n_t": value >= thr.n_t,
+        "e_t": value >= thr.e_t,
+        "z_t": value >= thr.z_t,
+        "pi_t": value >= thr.pi_t,
+        "d_R": value <= thr.d_r_max,
+        "zc_t": value >= thr.zc_t,
+        # Not policy hard signals; bars chosen so the English text is true:
+        # "several payments" = 2+ earlier ones, "forwards most" = >= 80%.
+        "v_t": value >= 2.0,
+        "ptr_t": value >= 0.8,
+        # g_t is ~0.997 on this synthetic graph (see AGENTS.md), so it never
+        # distinguishes a txn and is not cited.
+    }
+    return bool(checks.get(base, False))
+
+
+def risk_reasons(shap_rows: list, feats: dict, k: int = 3) -> list:
+    """Up to k English reasons, ranked by SHAP: the feature must push risk *up*
+    and its value must be in the risky range. One per base feature, so `z_t`
+    and `z_t_snd` don't both cite the same signal."""
+    row = synthesized_matrix(feats).iloc[0]
+    out, seen = [], set()
+    for feature, value, text in shap_rows:
+        base = feature.replace("_snd", "").replace("_rcv", "")
+        if value > 0 and base not in seen and in_risky_range(base, float(row[feature])):
+            seen.add(base)
+            out.append(text)
+    return out[:k]
 
 
 def scam_dna_figure():
@@ -167,25 +207,43 @@ def journey_dataframe(journey: list):
 
 # --- scenarios --------------------------------------------------------------
 
+def real_features(comb: tuple, snd: tuple, rcv: tuple) -> dict:
+    """27-col feature dict from (n_t, e_t, g_t, z_t, pi_t, d_R, v_t, zc_t, ptr_t)
+    combined / payer / payee."""
+    bases = ("n_t", "e_t", "g_t", "z_t", "pi_t", "d_R", "v_t", "zc_t", "ptr_t")
+    feats = dict(zip(bases, comb))
+    feats.update({f"{b}_snd": v for b, v in zip(bases, snd)})
+    feats.update({f"{b}_rcv": v for b, v in zip(bases, rcv)})
+    return feats
+
+
+# Each scenario's features are copied (rounded to 4 dp) from the real test-split
+# txn in `source_txn`, picked to match the story; `amount` is that txn's amount.
+# `conf_set` is the scripted set, used only when the sidebar pin toggle is on.
 SCENARIOS = [
     {
         "key": "normal",
-        "label": "Normal Transfer (Rs 40k to Mom)",
+        "label": "Normal Transfer (Rs 36k to Mom)",
         "icon": "🟢",
         "payee": "Mom",
         "upi": "mom@okhdfcbank",
-        "amount": 40_000.0,
+        "amount": 36_307.70,
         "note": "Rent help",
         "phone": "9876543210",
         "account_id": "1001",
         "txn_id": 100001,
-        "features": {"n_t": 5.0, "e_t": 0.0, "g_t": 0.0, "z_t": 0.0, "pi_t": 0.0, "d_R": 3.0},
+        "source_txn": 2391121,
+        "features": real_features(
+            (38.0, 0.2644, 1.0, 4.6623, 0.0, 3.0, 2.0, 5.7600, 0.2515),
+            (38.0, 0.2644, 1.0, 4.6623, 0.0, 3.0, 2.0, 5.7600, 0.2515),
+            (40.0, 0.4234, 1.0, 1.2731, 0.0, 3.0, 2.0, 2.3709, 0.0),
+        ),
         "soft": {},
         "conf_set": FINE,
         "reasons": [
-            "Amount is in line with this payee's history",
-            "Payee is an established, trusted contact",
-            "No link to any reported fraudulent account",
+            "Payee has no link to any reported fraudulent account",
+            "Payment history matches a long-standing contact",
+            "No probe payments or new-payee burst",
         ],
     },
     {
@@ -194,12 +252,17 @@ SCENARIOS = [
         "icon": "🔴",
         "payee": "WealthGrow Investments",
         "upi": "wealthgrow@ybl",
-        "amount": 200_000.0,
+        "amount": 196_538.18,
         "note": "IPO allotment fee",
         "phone": "9812345678",
         "account_id": "2002",
         "txn_id": 100002,
-        "features": {"n_t": 12.0, "e_t": 1.5, "g_t": 1.0, "z_t": 4.5, "pi_t": 0.0, "d_R": 1.0},
+        "source_txn": 2861134,
+        "features": real_features(
+            (65.0, 6.3706, 1.0, 6.4313, 0.0, 0.0, 3.0, 6.6293, 1.0892),
+            (65.0, 6.3706, 1.0, 6.4313, 0.0, 1.0, 3.0, 6.6293, 1.0892),
+            (41.0, 0.1964, 1.0, 6.0641, 0.0, 0.0, 3.0, 6.2621, 0.8784),
+        ),
         "soft": {},
         "conf_set": SCAM,
         "reasons": [ENGLISH_REASONS["z_t"], ENGLISH_REASONS["e_t"], ENGLISH_REASONS["d_R"]],
@@ -208,7 +271,7 @@ SCENARIOS = [
             {"Day": 1, "Stage": "Hook", "Amount": 10_000.0, "Direction": "Sent"},
             {"Day": 2, "Stage": "Fake Profit", "Amount": 5_000.0, "Direction": "Received"},
             {"Day": 3, "Stage": "Trust", "Amount": 50_000.0, "Direction": "Sent"},
-            {"Day": 5, "Stage": "Escalate", "Amount": 200_000.0, "Direction": "Sent"},
+            {"Day": 5, "Stage": "Escalate", "Amount": 196_538.18, "Direction": "Sent"},
         ],
     },
     {
@@ -217,15 +280,20 @@ SCENARIOS = [
         "icon": "🔴",
         "payee": "Officer R. Sharma (CBI)",
         "upi": "cbi.verify@upi",
-        "amount": 75_000.0,
+        "amount": 3_592.49,
         "note": "'Verification deposit'",
         "phone": "9000000001",
         "account_id": "3003",
         "txn_id": 100003,
-        "features": {"n_t": 8.0, "e_t": 1.2, "g_t": 1.0, "z_t": 3.5, "pi_t": 0.0, "d_R": 1.0},
+        "source_txn": 2599999,
+        "features": real_features(
+            (57.0, 0.0117, 1.0, 2.5225, 0.0, 0.0, 0.0, 2.5225, 0.8883),
+            (57.0, 0.0104, 1.0, 1.8773, 0.0, 0.0, 0.0, 1.8773, 0.8883),
+            (55.0, 0.0117, 1.0, 2.5225, 0.0, 1.0, 0.0, 2.5225, 0.3235),
+        ),
         "soft": {"is_screen_shared": True, "chat_stage": "payment_demand"},
         "conf_set": UNSURE,
-        "reasons": [ENGLISH_REASONS["d_R"], ENGLISH_REASONS["z_t"], ENGLISH_REASONS["g_t"]],
+        "reasons": [ENGLISH_REASONS["d_R"], ENGLISH_REASONS["n_t"], ENGLISH_REASONS["g_t"]],
     },
     {
         "key": "unclear",
@@ -233,16 +301,21 @@ SCENARIOS = [
         "icon": "🟡",
         "payee": "Rohan (marketplace)",
         "upi": "rohan.p2p@okicici",
-        "amount": 5_000.0,
+        "amount": 4_729.22,
         "note": "Second-hand phone",
         "phone": "9123456789",
         "account_id": "4004",
         "txn_id": 100004,
-        "features": {"n_t": 6.0, "e_t": 0.2, "g_t": 0.0, "z_t": 1.5, "pi_t": 0.0, "d_R": 3.0},
+        "source_txn": 2415533,
+        "features": real_features(
+            (40.0, 0.2209, 1.0, 2.5972, 0.0, 3.0, 4.0, 3.0886, 0.4985),
+            (40.0, 0.0440, 1.0, 2.5765, 0.0, 3.0, 4.0, 3.0678, 0.4953),
+            (36.0, 0.2209, 1.0, 2.5972, 0.0, 3.0, 4.0, 3.0886, 0.4985),
+        ),
         "soft": {"is_voice_active": True},
         "conf_set": UNSURE,
         "reasons": [
-            "No payment-history anomaly: amount matches this payee",
+            "Amount is a little above this account's usual range",
             "Voice call active during payment",
             "Payee has no link to reported accounts",
         ],
@@ -261,9 +334,11 @@ st.session_state.setdefault("checked", False)
 st.session_state.setdefault("override", False)
 st.session_state.setdefault("released", False)
 st.session_state.setdefault("analyst_action", None)
+st.session_state.setdefault("report", None)
 
 model = load_model(str(MODEL_PATH)) if MODEL_PATH.exists() else None
 conformal = load_json(str(CONFORMAL_PATH)) if CONFORMAL_PATH.exists() else {}
+qhats = load_conformal(CONFORMAL_PATH) if conformal else None  # (qhat_fine, qhat_scam)
 meta = load_json(str(META_PATH)) if META_PATH.exists() else {}
 
 with st.sidebar:
@@ -275,7 +350,14 @@ with st.sidebar:
             st.session_state.override = False
             st.session_state.released = False
             st.session_state.analyst_action = None
+            st.session_state.report = None
             st.rerun()
+
+    pin_sets = st.toggle(
+        "Pin scripted conformal sets", value=False,
+        help="Off: the live model + conformal.json decide each scenario's set. "
+             "On: use each scenario's scripted set instead.",
+    )
 
     st.divider()
     st.header("🔬 Model & Conformal")
@@ -287,23 +369,32 @@ with st.sidebar:
             f"best_iteration={meta.get('best_iteration')} · "
             f"scale_pos_weight={meta.get('scale_pos_weight', 0):.0f}"
         )
-    if conformal:
+    if qhats:
+        test = conformal.get("test", {})
         c1, c2 = st.columns(2)
-        c1.metric("alpha", f"{conformal.get('alpha', 0):.2f}")
-        c2.metric("q-hat", f"{conformal.get('qhat', 0):.6f}")
-        st.metric("test coverage", f"{conformal.get('test', {}).get('coverage', 0):.4f}")
-        st.caption(f"sets: {conformal.get('test', {}).get('set_distribution', {})}")
+        c1.metric("{fine} if p ≤", f"{qhats[0]:.4f}")
+        c2.metric("{scam} if p ≥", f"{1 - qhats[1]:.4f}")
+        c1.metric("scam coverage", f"{test.get('coverage_scam', test.get('coverage', 0)):.4f}")
+        c2.metric("legit coverage", f"{test.get('coverage_fine', test.get('coverage', 0)):.4f}")
+        st.caption(f"sets: {test.get('set_distribution', {})}")
 
 sc = SCENARIOS_BY_KEY[st.session_state.scenario]
 
 fri = check_fri(sc["phone"])
 mh = check_mulehunter(sc["account_id"])
 
+p_live = live_score(model, sc["features"]) if model is not None else None
+implied_set = conformal_classify(p_live, *qhats) if p_live is not None and qhats else None
+shap_rows = live_shap(model, sc["features"]) if model is not None else []
+model_driven = implied_set is not None and not pin_sets
+conf_set = implied_set if model_driven else sc["conf_set"]
+reasons = (risk_reasons(shap_rows, sc["features"]) if model_driven else []) or sc["reasons"]
+
 decision = decide(
-    sc["conf_set"],
+    conf_set,
     sc["features"],
     sc["soft"],
-    sc["reasons"],
+    reasons,
     sc["amount"],
     DEFAULT_THRESHOLDS,
     mulehunter_status=mh,
@@ -331,6 +422,7 @@ with tab_demo:
                 st.session_state.override = False
                 st.session_state.released = False
                 st.session_state.analyst_action = None
+                st.session_state.report = None
 
         if sc.get("journey"):
             with st.expander("📈 Transaction Journey", expanded=True):
@@ -390,49 +482,60 @@ with tab_demo:
                             c2.warning(f"MuleHunter.AI: {mh}")
                         else:
                             c2.success(f"MuleHunter.AI: {mh}")
-                        a1, a2 = st.columns(2)
-                        if a1.button("Approve Release", width="stretch"):
-                            st.session_state.analyst_action = "approved"
-                        if a2.button("File 1930 Report & Block", width="stretch"):
-                            st.session_state.analyst_action = "reported"
+                        # The hold resolves exactly once: analyst approve / report, or the
+                        # 60-min auto-release, whichever comes first.
                         if st.session_state.analyst_action == "approved":
                             st.success(f"Release approved — payment released to {sc['payee']}.")
                         elif st.session_state.analyst_action == "reported":
-                            rep = file_1930_report(sc["txn_id"], sc["amount"])
+                            rep = st.session_state.report
                             st.success(f"Report filed with NCRP (ref {rep['ref_id']}). Account blocked.")
+                        elif st.session_state.released:
+                            st.info("Auto-released before analyst review — no action available.")
+                        else:
+                            a1, a2 = st.columns(2)
+                            if a1.button("Approve Release", width="stretch"):
+                                st.session_state.analyst_action = "approved"
+                                st.rerun()
+                            if a2.button("File 1930 Report & Block", width="stretch"):
+                                # File once on click; reruns reuse the stored filing.
+                                st.session_state.report = file_1930_report(sc["txn_id"], sc["amount"])
+                                st.session_state.analyst_action = "reported"
+                                st.rerun()
                 if sc["key"] == "police":
                     st.error(
                         "📣 **Priya Alerted** — Maya silently notified your trusted contact "
                         "**Priya** and flagged this payment to the fraud desk. Screen-sharing "
                         "during a payment demand is a classic 'digital arrest' pattern."
                     )
-                if not st.session_state.released:
-                    if st.button("⏭ Advance 60 min (demo)", width="stretch"):
-                        st.session_state.released = True
-                        st.rerun()
-                else:
+                if st.session_state.analyst_action == "reported":
+                    st.info("Auto-release cancelled — funds blocked after the 1930 report.")
+                elif st.session_state.analyst_action == "approved":
+                    pass  # already released by the analyst
+                elif st.session_state.released:
                     st.success("Auto-released after 60 minutes — payment sent.")
+                elif st.button("⏭ Advance 60 min (demo)", width="stretch"):
+                    st.session_state.released = True
+                    st.rerun()
 
     with right:
         st.subheader("🧮 Judge view")
         st.caption("Raw features, conformal set, and the exact policy.decide() output.")
 
         with st.expander("Raw features (t = now)", expanded=True):
+            st.caption(f"Copied from real test-split txn #{sc['source_txn']}.")
             st.dataframe(pd.DataFrame([sc["features"]]), width="stretch", hide_index=True)
 
         with st.expander("Soft signals & conformal set", expanded=True):
             st.markdown("**Soft signals (mocked)**")
             st.json(sc["soft"] or {})
-            st.markdown("**Conformal set (pinned for scenario)**")
-            st.code(sc["conf_set"], language="text")
-            if model is not None and conformal:
-                p = live_score(model, sc["features"])
-                implied = conformal_classify(p, float(conformal["qhat"]))
-                st.metric("live model p_scam", f"{p:.4f}")
-                st.caption(f"model-implied set: {implied} (scenario pins {sc['conf_set']})")
+            st.markdown(f"**Conformal set used ({'live model' if model_driven else 'pinned script'})**")
+            st.code(conf_set, language="text")
+            if p_live is not None:
+                st.metric("live model p_scam", f"{p_live:.4f}")
+                st.caption(f"model-implied set: {implied_set} · scripted set: {sc['conf_set']}")
 
         with st.expander("Active hard / soft signals", expanded=False):
-            st.json(active_signals(sc["features"], sc["soft"], DEFAULT_THRESHOLDS, mh, sc["conf_set"]))
+            st.json(active_signals(sc["features"], sc["soft"], DEFAULT_THRESHOLDS, mh, conf_set))
 
         with st.expander("Ecosystem signals (mocked)", expanded=False):
             c1, c2 = st.columns(2)
@@ -446,7 +549,7 @@ with tab_demo:
                 c2.success(f"MuleHunter.AI: {mh}")
 
         with st.expander("Live SHAP top-3 (from xgb_model.json)", expanded=False):
-            rows = live_shap(model, sc["features"]) if model is not None else []
+            rows = shap_rows[:3]
             if rows:
                 df = pd.DataFrame(
                     [
@@ -468,16 +571,48 @@ with tab_demo:
 
 with tab_sandbox:
     st.subheader("🧪 Sandbox Mode")
-    st.caption("Tune the raw inputs and watch the Two-Signal Rule decide in real time.")
-    amount = st.slider("Amount (₹)", 1_000, 500_000, 50_000, step=1_000)
-    mule_hops = st.slider("Mule Hops", 0, 3, 3, step=1)
-    screen_shared = st.toggle("Screen Shared", value=False)
+    st.caption(
+        "Tune the six journey features, score them with the live model, and watch the "
+        "Two-Signal Rule decide. Defaults are a typical legit payment (test-split medians). "
+        "Each feature is applied to both payer and payee sides, and earlier payments to the "
+        "same payee today are assumed to be the same size as this one (zc_t = z_t + log(1 + v_t)), "
+        "so this is an approximation of a real 27-feature row."
+    )
+    f1, f2 = st.columns(2)
+    amount = f1.slider("Amount (₹) — drives analyst review only", 1_000, 500_000, 50_000, step=1_000)
+    n_t = f1.slider("n_t: new payees in last 7 days", 0, 100, 56)
+    e_t = f1.slider("e_t: amount vs usual for a new payee", 0.0, 8.0, 0.01, step=0.01)
+    z_t = f2.slider("z_t: amount z-score vs account history", -2.0, 9.0, 0.0, step=0.1)
+    pi_t = f2.slider("pi_t: tiny probe payments within an hour", 0, 5, 0)
+    d_r = f2.slider("d_R: hops to a reported account (3 = none within 2)", 0, 3, 2)
+    v_t = f1.slider("v_t: earlier payments to this payee in 24 h", 0, 20, 0)
+    ptr_t = f2.slider("ptr_t: share of 24 h inflow forwarded on", 0.0, 1.5, 0.4, step=0.05)
+    s1, s2, s3 = st.columns(3)
+    screen_shared = s1.toggle("Screen shared", value=False)
+    voice_active = s2.toggle("Voice call active", value=False)
+    chat_stage = s3.selectbox("Chat stage", ["none", "escalated", "payment_demand"])
+    force_unsure = st.toggle(
+        "Force the unsure set {fine, scam}", value=False,
+        help="Skip the model and test the hard/soft-signal rule directly.",
+    )
     st.divider()
     if st.button("Simulate Payment", type="primary", width="stretch"):
-        z_t = amount / 100_000.0
-        features = {"n_t": 0.0, "e_t": 0.0, "g_t": 0.0, "z_t": z_t, "pi_t": 0.0, "d_R": float(mule_hops)}
-        soft = {"is_screen_shared": screen_shared}
-        sandbox_decision = decide(UNSURE, features, soft, reasons=[], amount=float(amount))
+        features = {"n_t": float(n_t), "e_t": e_t, "g_t": 1.0, "z_t": z_t,
+                    "pi_t": float(pi_t), "d_R": float(d_r), "v_t": float(v_t),
+                    "zc_t": z_t + math.log1p(v_t), "ptr_t": ptr_t}
+        soft = {"is_screen_shared": screen_shared, "is_voice_active": voice_active,
+                "chat_stage": chat_stage}
+        if force_unsure or model is None or not qhats:
+            sandbox_set, p_sandbox = UNSURE, None
+        else:
+            p_sandbox = live_score(model, features)
+            sandbox_set = conformal_classify(p_sandbox, *qhats)
+        sandbox_reasons = risk_reasons(live_shap(model, features), features) if model is not None else []
+        sandbox_decision = decide(sandbox_set, features, soft, reasons=sandbox_reasons,
+                                  amount=float(amount))
+        m1, m2 = st.columns(2)
+        m1.metric("live model p_scam", "forced" if p_sandbox is None else f"{p_sandbox:.4f}")
+        m2.metric("conformal set", sandbox_set)
         action = sandbox_decision["action"]
         if action == "release":
             st.success("✅ Release — Maya saw no risk and would let this payment through.")

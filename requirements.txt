@@ -1,5 +1,6 @@
 numpy>=2.0
 pandas>=2.2
+pyarrow>=14
 networkx>=3.0
 xgboost>=2.0
 scikit-learn>=1.4

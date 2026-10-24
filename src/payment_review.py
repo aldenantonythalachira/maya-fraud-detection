@@ -20,7 +20,8 @@ from claims import compare_claim, extract_claim
 from policy import decide
 from risk_common import FEATURE_COLUMNS
 
-POLICY_VERSION = "payment-review-v1"
+# v2: zc_t (24 h cumulative amount) joined the payment-history hard signals.
+POLICY_VERSION = "payment-review-v2"
 
 
 def canonical(value):
@@ -57,10 +58,19 @@ def feature_snapshot(payment, evidence):
         frontier = {dst for src, dst in edges if src in frontier}
     amount = payment["amount_paise"]
     ratio = amount / max(prior) if prior else 0.0
+    # Same-recipient payments in the evidence window feed the anti-splitting
+    # features: v_t counts them, zc_t is z_t on the cumulative amount.
+    same = [e["amount_paise"] for e in history if e["recipient"] == recipient]
+    cum_ratio = (amount + sum(same)) / max(prior) if prior else 0.0
     combined = dict(n_t=float(len(payees)), e_t=ratio if recipient not in payees else 0.0,
                     g_t=float(any(e["kind"] == "payment" and e["direction"] == "incoming" for e in evidence)),
                     z_t=max(0.0, math.log(ratio)) if ratio else 0.0,
-                    pi_t=float(sum(e["amount_paise"] <= 1000 for e in history)), d_R=float(distance))
+                    pi_t=float(sum(e["amount_paise"] <= 1000 for e in history)), d_R=float(distance),
+                    v_t=float(len(same)),
+                    zc_t=max(0.0, math.log(cum_ratio)) if cum_ratio else 0.0,
+                    # Pass-through needs the recipient's own flows, which this
+                    # evidence lacks: None is JSON-safe and the model sees NaN.
+                    ptr_t=None)
     return {column: combined[column.replace("_snd", "").replace("_rcv", "")] for column in FEATURE_COLUMNS}
 
 
@@ -69,7 +79,8 @@ class ModelAdapter:
         import xgboost as xgb
         self.model = xgb.XGBClassifier()
         self.model.load_model(model_path)
-        self.qhat = json.loads(Path(calibration_path).read_text())["qhat"]
+        from conformal import load_conformal
+        self.qhats = load_conformal(calibration_path)  # (qhat_fine, qhat_scam)
         self.version = hashlib.sha256(Path(model_path).read_bytes()).hexdigest()
         self.calibration_version = hashlib.sha256(Path(calibration_path).read_bytes()).hexdigest()
 
@@ -78,7 +89,7 @@ class ModelAdapter:
         from conformal import classify
         row = pd.DataFrame([features], columns=FEATURE_COLUMNS).astype("float32")
         score = float(self.model.predict_proba(row)[0, 1])
-        return dict(score=score, uncertainty=classify(score, self.qhat))
+        return dict(score=score, uncertainty=classify(score, *self.qhats))
 
 
 def evaluate(adapter, payment, evidence, text, consent, enhanced=True):
@@ -91,6 +102,8 @@ def evaluate(adapter, payment, evidence, text, consent, enhanced=True):
     reasons = []
     if features["e_t"] >= 1 or features["z_t"] >= 2.6:
         reasons.append("This amount is high relative to the available payment history.")
+    elif features["zc_t"] >= 4.2:
+        reasons.append("Payments to this recipient add up to a high amount relative to the history.")
     if features["d_R"] <= 1:
         reasons.append("The recipient is connected to an account reported before this review.")
     if soft:
@@ -103,7 +116,7 @@ def evaluate(adapter, payment, evidence, text, consent, enhanced=True):
         result["action"] = "nudge"
         result["reasons"] = ["The message promises incoming money, but this payment sends money."]
     # Independent verifier of the proposed action; model certainty is not a group.
-    history = any(features[k] >= t for k, t in (("n_t", 59), ("e_t", 1), ("z_t", 2.6), ("pi_t", 1)))
+    history = any(features[k] >= t for k, t in (("n_t", 59), ("e_t", 1), ("z_t", 2.6), ("zc_t", 4.2), ("pi_t", 1)))
     receiving = features["d_R"] <= 1
     if result["action"] == "hold" and not ((history and receiving) or ((history or receiving) and soft)):
         raise ValueError("Policy verifier rejected a hold without independent groups")

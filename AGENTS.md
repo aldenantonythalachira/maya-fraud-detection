@@ -4,7 +4,9 @@
 
 - This is now a Git repository. All changes use feature branches and PRs.
 - Core setup uses Python 3.12, `.venv`, and `requirements-core.txt`.
-- Run `python -m unittest discover -s tests -v` and the policy self-test.
+- Run `python -m pytest -v` (it also runs the unittest-style tests) and the
+  policy self-test; CI (`.github/workflows/checks.yml`) runs both on
+  `requirements-dev.txt` (= `requirements-core.txt` + pytest).
 - Both `{scam}` and `{fine, scam}` require the two-group safeguard before a
   hold. A mule verdict counts as receiving-account evidence for either set.
   `{fine}` still releases. Unknown prediction sets raise ValueError.
@@ -13,61 +15,87 @@
 
 ## Status
 
-Python 3.12 ML/AI project, no git repo. Sources: `src/journey_generator.py`
+Python 3.12 ML/AI project (git repo, default branch `main`). Sources: `src/journey_generator.py`
 (synthetic UPI scam-journey data generator), `src/features.py` (Phase 2 past-only
 feature engineering), the Phase 3 risk stack `src/risk_common.py`,
 `src/train_xgb.py`, `src/conformal.py`, `src/reasons.py`, the Phase 4 action
-engine `src/policy.py`, Phase 6 `src/attack_sim.py` (red-teaming) +
-`src/integrations.py` (ecosystem mocks), the Phase 7 GNN challenger
-`src/gnn_challenger.py` (PyTorch Geometric GraphSAGE), and the Phase 8 federated
-learning simulation `src/federated_sim.py` (FedAvg across two banks). No
-formatter/test framework yet.
+engine `src/policy.py`, Phase 6 `src/attack_sim.py` (red-teaming, with the
+evasion perturbations in `src/evasion.py`) + `src/integrations.py` (ecosystem
+mocks), the Phase 7 GNN challenger `src/gnn_challenger.py` (PyTorch Geometric
+GraphSAGE), and the Phase 8 federated learning simulation
+`src/federated_sim.py` (FedAvg across two banks). Tests: `tests/` (pytest). No
+formatter/linter.
 
-- No package manager/venv chosen. `pip` is externally managed on this box and
-  `python3-venv` is unavailable, so installs here need `pip3 install --user
-  --break-system-packages -r requirements.txt`. Re-verify before assuming.
-- There is no `pyproject.toml`, `Makefile`, or CI. Do not assume lint/test
-  commands exist; check the repo state first.
+- Environment: `python -m venv .venv`, then `.venv\Scripts\python -m pip install
+  -r requirements-dev.txt` (core + pytest). `requirements-core.txt` holds the
+  core ranges (`requirements-core.lock.txt` is the verified snapshot);
+  `requirements.txt` is the full set incl. `torch` / `torch-geometric` for the
+  Phase 7 GNN. `pyarrow` is core (features.py writes Parquet).
+- CI: `.github/workflows/checks.yml` (pytest + policy self-test). No
+  `pyproject.toml` or `Makefile`.
 
 ## Commands
 
+All commands run from the repo root. `python` below means the venv
+interpreter: activate it (`.venv\Scripts\activate`) or call
+`.venv\Scripts\python` directly.
+
 - Generate data (writes 3 CSVs into `data/`):
-  - `python3 src/journey_generator.py` (full: 20k users / 120 days, ~28s)
-  - `python3 src/journey_generator.py --smoke` (600 users / 30 days, <1s; use
-    this to iterate)
+  - `python src/journey_generator.py` (full: 20k users / 120 days, ~28s)
+  - `python src/journey_generator.py --smoke` (600 users / 30 days, <1s; use
+    this to iterate). Writes to `data/smoke/` so it never clobbers the full data.
   - Flags: `--out-dir`, `--seed`, `--users N`, `--days N`.
-- Build Phase 2 features (`data/features.csv`):
-  - `python3 src/features.py` (full: ~3.06M rows, ~2.5 min)
-  - `python3 src/features.py --smoke` (uses `/tmp/opencode/maya_smoke/*`, ~5s)
-  - Flags: `--txns`, `--edges`, `--labels`, `--out`, `--days`. Regenerating the
-    dataset requires re-running features afterwards.
+- Build Phase 2 features (`data/features.csv` + `data/features.parquet`):
+  - `python src/features.py` (full: ~3.06M rows, ~4 min)
+  - `python src/features.py --smoke` (reads/writes `data/smoke/*`, 30 days, ~5s)
+  - Flags: `--txns`, `--edges`, `--labels`, `--out`, `--days` (explicit flags
+    override the `--smoke` defaults). Regenerating the dataset requires
+    re-running features afterwards.
 - Phase 3 risk stack (reads `data/features.csv`, writes `models/`):
-  - `python3 src/train_xgb.py` (~45s; `--smoke` for a fast 100k-row subset)
-  - `python3 src/conformal.py` (calibrate on val; `--txn-id N` to score one txn)
-  - `python3 src/reasons.py --txn-id N` (SHAP top-3; `--demo K` for top-risk txns)
+  - `python src/train_xgb.py` (~40s; adversarial training on by default,
+    `--no-augment` to disable; `--smoke` trains on `data/smoke/features.csv`
+    and writes `models/*_smoke.json`)
+  - `python src/conformal.py` (Mondrian calibration on the `calib` split;
+    `--alpha-fine` / `--alpha-scam`; `--txn-id N` to score one txn;
+    `--smoke` uses the smoke model and writes `models/conformal_smoke.json`)
+  - Smoke chain (end to end, ~6s): `journey_generator.py --smoke` ->
+    `features.py --smoke` -> `train_xgb.py --smoke` -> `conformal.py --smoke`.
+    Smoke paths live in `risk_common.SMOKE_*`; the UI/policy still load the full
+    `models/xgb_model.json` + `conformal.json`.
+  - `python src/reasons.py --txn-id N` (SHAP top-3; `--demo K` for top-risk txns)
   - Flag paths are `--features/--model/--model-out/--meta-out/--out`.
 - Phase 4 action engine (reads `models/` + `data/features.csv`):
-  - `python3 src/policy.py --self-test` (asserts the full Two-Signal truth table)
-  - `python3 src/policy.py --txn-id N --soft-signals '{"chat_stage": "escalated"}'`
-  - `python3 src/policy.py --demo K --soft-signals '{...}'` (top-risk txns)
+  - `python src/policy.py --self-test` (asserts the full Two-Signal truth table)
+  - `python src/policy.py --eval [SPLIT]` (runs `decide()` over every txn of the
+    split, default `test`, and prints release/nudge/hold rates for scams vs
+    legit + hold precision; ~25s on full data)
+  - `python src/policy.py --txn-id N --soft-signals '{"chat_stage": "escalated"}'`
+  - `python src/policy.py --demo K --soft-signals '{...}'` (top-risk txns)
   - Flags: `--model/--features/--conformal/--amount`, threshold overrides
-    (`--n-t-threshold --e-t-threshold --z-t-threshold --pi-t-threshold --d-r-max`).
+    (`--n-t-threshold --e-t-threshold --z-t-threshold --zc-t-threshold
+    --pi-t-threshold --d-r-max`).
 - Streamlit demo UI (reads `models/`, no `data/features.csv` needed):
   - `streamlit run ui/app.py` (from repo root)
 - Phase 6 red-teaming + ecosystem mocks:
-  - `python3 src/attack_sim.py` (~30s; 100 rewording attacks, prints catch-rate
-    drop, exits 0 iff Maya's drop < 10 pts)
-  - `python3 src/integrations.py` (prints the mock FRI / MuleHunter / 1930 calls)
+  - `python src/attack_sim.py` (~30s; rewording + adaptive journey attacks on
+    all test scams, prints catch-rate drops; `--strict` gates the adaptive
+    attacks too; `--model/--meta` attack another model, e.g. an older one)
+  - `python src/integrations.py` (prints the mock FRI / MuleHunter / 1930 calls)
 - Phase 7 GNN challenger (CPU-only torch, demo-only):
-  - `python3 src/gnn_challenger.py --smoke` (3 epochs, fast sanity check)
-  - `python3 src/gnn_challenger.py` (full GraphSAGE training + verdict table)
+  - `python src/gnn_challenger.py --smoke` (3 epochs, fast sanity check)
+  - `python src/gnn_challenger.py` (full GraphSAGE training + verdict table)
 - Phase 8 federated learning simulation (FedAvg across two banks):
-  - `python3 src/federated_sim.py --smoke` (row-sampled, fast)
-  - `python3 src/federated_sim.py` (full: ~45s, prints local vs global table)
-- There are no tests; `--smoke` plus the built-in `validate()` summary printed on
-  each run is the verification step. A generator run is only healthy if
-  `campaign_split_violations == 0` and `ref_integrity == True`. A feature run is
-  healthy if every entry of `sample max|diff|` is `0.0` (optimized loop vs an
+  - `python src/federated_sim.py --smoke` (row-sampled, fast)
+  - `python src/federated_sim.py` (full: ~60s, prints local vs global table)
+- Tests: `python -m pytest` (~20-35s, 71 tests incl. the unittest-style payment
+  review / safeguard suites). `tests/test_pipeline.py` runs the
+  whole smoke chain (generator -> features with the exact brute-force check ->
+  train -> conformal -> policy --eval) in a temp dir, so it needs no `data/`.
+  `tests/test_ui.py` drives `ui/app.py` with Streamlit's AppTest and needs the
+  trained `models/` (skipped otherwise). The rest are pure unit tests.
+- Built-in health checks still apply: a generator run is only healthy if
+  `campaign_split_violations == 0` and `ref_integrity == True`; a feature run
+  is healthy if every entry of `sample max|diff|` is `0.0` (optimized loop vs an
   independent past-only brute force on 300 sampled txns).
 
 ## Phase 2 feature specifics (non-obvious)
@@ -87,23 +115,65 @@ formatter/test framework yet.
   campaigns, so `pi_t` is nonzero (~0.2M rows full data).
 - Remaining data caveat: `g_t` is near-constant (~0.997) on this synthetic
   random-friend graph (users keep receiving first-contact credits).
+- **Anti-evasion features** (24 h window `(T - 1 day, T)`, same past-only rule):
+  `v_t` = past payments sender -> receiver; `zc_t` = log(amount + those
+  payments' total) - median past log amount (so a split payment's last part
+  sees the full amount); `ptr_t` = the account's 24 h outflow / inflow (NaN if
+  no inflow; mules forward what they receive). Combined: `v_t` max, `zc_t`
+  larger |z|, `ptr_t` fmax. Window sums use `math.fsum` in both the loop and
+  the brute force, so they match bit-for-bit.
+- Note: legit accounts repeat-pay merchants, so legit `zc_t` is large too
+  (val legit median ~3.2, p99 ~4.2) — it needs its own policy bar.
+- **Helper columns** (not model features): `pair24`, `in24_snd/out24_snd`,
+  `in24_rcv/out24_rcv` — the raw 24 h sums, used by `src/evasion.py` to
+  recompute the anti-evasion features exactly under attack.
+- `features.py` also writes `data/features.parquet` (~450 MB vs ~1.2 GB CSV).
+  `risk_common.load_features()` reads it instead of the CSV whenever it is at
+  least as new (`fresh_parquet()`), ~1.4s vs ~15s for a full load.
 
 ## Phase 3 risk model specifics (non-obvious)
 
-- `src/risk_common.py` is the single source of truth: `FEATURE_COLUMNS` (18 = 6
-  combined + 12 `_snd`/`_rcv`) and `ENGLISH_REASONS`. Import it; do not duplicate
-  the feature list in the three scripts. `data/features.csv` also has `txn_id`,
+- `src/risk_common.py` is the single source of truth: `FEATURE_COLUMNS` (27 = 9
+  combined + 18 `_snd`/`_rcv`), `ENGLISH_REASONS`, the XGBoost hyperparameters
+  (`XGB_DEFAULTS` / `xgb_params()`), and the `recall_at_fpr()` metric. Import
+  them; do not duplicate the feature list, params, or metric in the scripts. `data/features.csv` also has `txn_id`,
   `ts`, `day`, `split`, `sender_id`, `receiver_id`, `amount`, `is_scam`.
-- Model: `XGBClassifier(tree_method="hist")`, `scale_pos_weight = neg/pos (~987)`,
-  early stopping on val AUC-PR. Test metrics currently AUROC 0.9983, AUPRC 0.913,
-  recall@1%FPR 0.969 (threshold chosen on val, reported on test).
-- Conformal is a **manual LAC** implementation (not MAPIE): nonconformity
-  `1 - p(true class)`, `qhat` saved in `models/conformal.json`. Sets are only
-  `{fine}`, `{scam}`, or `{fine, scam}`; the ambiguous middle band maps to
-  `{fine, scam}`, so sets are never empty and coverage is never degraded.
-- Caveat: with ~0.09% positives, marginal 90% coverage is easy (`qhat` is tiny),
-  so `{scam}` singletons are rare and most scam hits are `{fine, scam}`. Use
-  Mondrian/class-conditional calibration if a scam-specific guarantee is needed.
+- Model: `XGBClassifier(tree_method="hist")`, early stopping on val AUC-PR.
+- **Adversarial training** (default): `evasion.augment()` adds evasive copies
+  of the *train* scams for `evasion.TRAIN_ATTACKS` (split_2, split_4,
+  extra_hop) — 11,480 extra positive rows, each attack family weighted 1 per
+  original scam — and `scale_pos_weight = neg / total positive weight`
+  (~247). val/calib/test are never augmented. `--no-augment` disables it.
+- Test metrics currently AUROC 1.0000, AUPRC 0.998, recall@1%FPR 0.993
+  (threshold chosen on val, reported on test; see `models/model_meta.json`).
+  These are **too good to mean much**: the synthetic generator makes scams very
+  separable (the 18-feature model was already AUROC 0.9995). The new features
+  are verified past-only, so this is data easiness, not leakage.
+- **Splits**: `risk_common.load_features()` calls `carve_calib()`, which relabels
+  the later half of the val days as `calib`. `val` (earlier days, e.g. 72–83)
+  is for early stopping + the 1%-FPR threshold; `calib` (84–95) is used only
+  for conformal calibration. Every script that loads features sees the same 4
+  splits (`train/val/calib/test`); `test` is unchanged.
+- Conformal is a **manual Mondrian (class-conditional) LAC** implementation
+  (not MAPIE): nonconformity `1 - p(true class)` with a separate quantile per
+  class, `qhat_fine` (alpha_fine=0.01, i.e. >=99% of legit txns admit `fine`)
+  and `qhat_scam` (alpha_scam=0.10, >=90% of scams admit `scam`), saved in
+  `models/conformal.json`. Sets are only `{fine}`, `{scam}`, or
+  `{fine, scam}`; a txn admitted by both classes **or by neither** maps to
+  `{fine, scam}`, so sets are never empty. Load with
+  `conformal.load_conformal()` (returns `(qhat_fine, qhat_scam)`; still reads
+  an old single-`qhat` file); `classify(p, qhat_fine, qhat_scam)`.
+- Why Mondrian: a single marginal qhat at ~0.09% positives collapsed to
+  ~0.0002, so `{scam}` needed p >= 0.9998 and ~6.6% of test txns were
+  `{fine, scam}`. Current full-data result: `{fine}` if p <= 0.00063,
+  `{scam}` if p >= 0.9963, unsure share 0.51%, scam coverage 1.00.
+- Current policy eval (`policy.py --eval`, test, no soft signals/MuleHunter,
+  universal two-group safeguard): release 99.43% / nudge 0.30% / hold 0.26% of
+  txns; 89.6% of scams held, 10.4% nudged, 0 released; 0.196% of legit held;
+  hold precision 0.26. (Before the safeguard, when `{scam}` held outright, the
+  same model held 95.2% of scams.) History, pre-safeguard: marginal conformal
+  87.9% held / 1.22% legit held / precision 0.05; Mondrian + 18 features
+  92.1% / 0.23% / 0.23.
 - SHAP uses log-odds (`TreeExplainer` on the booster), with native
   `pred_contribs=True` fallback for NaN rows; positive SHAP increases scam risk.
 - `models/*.json` are generated artifacts; do not commit them alongside `data/`.
@@ -114,25 +184,39 @@ formatter/test framework yet.
   I/O-free function returning exactly `{action, reasons, auto_release_minutes,
   requires_analyst}`; `reasons` are the 3 SHAP English strings from `reasons.py`.
   Actions: `release` / `nudge` / `hold`. Hold => 60 min auto-release.
-- Rule by conformal set: `{fine}` -> release; `{scam}` -> hold; `{fine, scam}`
-  (unsure) -> hold iff (payment-hard AND receiving-hard) OR (>=1 hard AND >=1
-  soft), else nudge. Chat/voice/screen-share are **soft only** and can never hold
-  alone.
-- Hard signals: Payment History family `n_t/e_t/z_t/pi_t`, Receiving Account
-  family `d_R`. Defaults (val-percentile informed, CLI-overridable): `n_t>=59`,
-  `e_t>=1.0`, `z_t>=2.6`, `pi_t>=1`, `d_R<=1`. `n_t` is a weak discriminator on
-  this data (scam median 50 vs overall 46) so its bar is deliberately high.
+- Rule by conformal set (universal two-group safeguard): `{fine}` -> release;
+  `{scam}` **and** `{fine, scam}` -> hold iff (payment-hard AND receiving-hard)
+  OR (>=1 hard AND >=1 soft), else nudge. A model prediction never bypasses the
+  safeguard. Chat/voice/screen-share are **soft only** and can never hold
+  alone. Unknown sets raise `ValueError`.
+- Hard signals: Payment History family `n_t/e_t/z_t/zc_t/pi_t`, Receiving
+  Account family `d_R`. Defaults (val-percentile informed, CLI-overridable):
+  `n_t>=59`, `e_t>=1.0`, `z_t>=2.6`, `zc_t>=4.2`, `pi_t>=1`, `d_R<=1`. `z_t`'s
+  2.6 and `zc_t`'s 4.2 both sit at ~val legit p99. `zc_t` keeps a split
+  payment's signal alive; rows without `zc_t` fall back to the `z_t` check.
+  `n_t` is a weak discriminator on this data (scam median 50 vs overall 46) so
+  its bar is deliberately high.
 - **MuleHunter.AI integration**: `decide()` takes an optional `mulehunter_status`
   (from `integrations.check_mulehunter`); a `"mule"` verdict **while the conformal
-  set is `{fine, scam}`** counts as a Receiving Account hard signal. It is ignored
-  for `{fine}`/`{scam}` and for `"suspicious"`/`"clean"`. `decide()` stays pure
+  set is not `{fine}`** counts as a Receiving Account hard signal. It is ignored
+  for `{fine}` and for `"suspicious"`/`"clean"`. `decide()` stays pure
   (status is a plain input); the mock I/O happens in `run()`/the UI.
 - Soft signals (mocked input): `is_screen_shared`, `is_voice_active`, and
   `chat_stage` in `{escalated, payment_demand}`.
 - `requires_analyst` is True **only when the action is hold and amount > ₹100k**
   (not for release/nudge). Thresholds are a frozen `Thresholds` dataclass.
-- Verification is `python3 src/policy.py --self-test` (20-case truth table,
-  incl. 7 MuleHunter cases).
+- `src/payment_review.py` (simulated payment service) loads the conformal file
+  with `load_conformal()` and calls `classify(p, qhat_fine, qhat_scam)`. Its
+  `feature_snapshot()` adapter fills `v_t` / `zc_t` from same-recipient history
+  in the evidence window and sets `ptr_t=None` (not observable there;
+  JSON-safe for review digests, NaN to the model). Its independent hold
+  verifier includes `zc_t >= 4.2`. `POLICY_VERSION` is `payment-review-v2`.
+  Known: the adapter's features are far from the real data (e.g. `n_t=1`), so
+  with the 27-feature model the "Rent" demo is `{fine, scam}` -> nudge (it was
+  `{fine}` -> release with the 18-feature model).
+- Verification is `python src/policy.py --self-test` (22-case truth table,
+  incl. 7 MuleHunter and 2 split-payment cases). The cases live in
+  `policy.SELF_TEST_CASES`, shared with `tests/test_policy.py`.
 
 ## Phase 6 specifics (non-obvious)
 
@@ -141,13 +225,41 @@ formatter/test framework yet.
   mocks the DoT FRI (`check_fri`), MuleHunter.AI (`check_mulehunter`), and the
   NCRP 1930 portal (`file_1930_report`). `known accounts`: `1001`/`4004` clean,
   `2002`/`3003` mule.
-- `src/attack_sim.py` red-teams the model with AI-rewritten chat scripts. Maya's
-  "catch rate" is recall at the val-chosen 1%-FPR threshold (`model_meta.json`);
-  because the 18 features are journey/money-flow only (no text), rewording is a
-  no-op and the drop is 0.0 pts. A phrase-matching "text-only detector" is
-  included as the contrast, collapsing by `REWORD_EVASION = 0.88` (the PDF figure).
-  Exits 0 iff Maya's drop < `--drop-target` (default 10 pts). Reads full
-  `data/features.csv` (~30s); no `--smoke`.
+- `src/attack_sim.py` red-teams the model on **all** test-split scams (or
+  `--n-attacks N` sampled). "Catch rate" = recall at the val-chosen 1%-FPR
+  threshold (`model_meta.json`). Two parts:
+  - **Text rewording** is *illustrative only*: no chat text is a model input,
+    so Maya's drop is 0.0 by construction, and the phrase-matching text
+    detector's ~88% collapse is set by `REWORD_EVASION` (the PDF figure).
+  - **Adaptive journey attacks** are the real test: the scammer perturbs what
+    they control and features are recomputed with the `features.py` formulas
+    by `src/evasion.py` (`split_k` into k parts within 24 h, `extra_hop`,
+    `no_probes`, `all` = split_4 + extra_hop + no_probes; exact formulas and
+    the two conservative approximations are in its docstring). A split scam is
+    **caught if any part is caught**. Scoring uses the model's own feature
+    list, so `--model/--meta` can attack an older 18-feature model.
+  - Results (catch rate after attack, full test data):
+
+    | attack | 18-feat model | 27-feat, no adv. training | current |
+    |---|---|---|---|
+    | none | 96.7 | 99.5 | 99.3 |
+    | split_2 | 91.8 | 97.4 | 99.6 |
+    | split_4 | 84.4 | 90.5 | 99.3 |
+    | split_10 (held out) | 72.2 | 65.0 | 95.8 |
+    | extra_hop | 80.0 | 74.2 | 99.6 |
+    | all (held out) | 62.3 | 61.4 | 99.5 |
+
+    The new features alone did **not** help (the model kept trusting `z_t`
+    because no training scam was ever split); adversarial training on
+    split_2 / split_4 / extra_hop did, and transfers to the held-out
+    split_10 and combined `all`. Caveat: these are **known, white-box
+    attacks** scored with the same perturbation model used to train — real
+    scammers will try evasions not modelled here (e.g. a never-used entry
+    mule with no history, which `extra_hop` does not simulate).
+  - Exits 0 iff the rewording drop < `--drop-target` (always, by
+    construction); `--strict` also gates every adaptive attack (currently
+    passes, worst drop split_10 -3.5 pts). Reads full features (~30s); no
+    `--smoke`.
 
 ## Phase 7 GNN challenger specifics (non-obvious)
 
@@ -159,17 +271,28 @@ formatter/test framework yet.
   deliberately excluded so the model must learn mule-ness from neighbourhood
   structure (2-hop receptive field over the `victim -> entry mule -> mid mule ->
   aggregator` relay).
-- Transductive (full undirected graph, node masks from `labels.split`); `shortcut:`
-  not time-sliced — `graph_edges` is the aggregated full-history graph, upgrade to
-  per-day edge slicing via `first_ts` for a true past-only comparison.
+- **Past-only, time-sliced snapshots** (node masks from `labels.split`): an
+  edge is in a snapshot iff its `first_ts` day < cutoff. Fit on the `train`
+  snapshot (cutoff = first val day, 72), early-stop on the `val` snapshot
+  (cutoff = first test day, 96), score test on the full graph. Degree features
+  are recomputed per snapshot; GraphSAGE is inductive so weights transfer.
+  Split start days come from `transactions.csv` (`--txns`); `first_ts` day =
+  days since 2024-01-01 (= `transactions.day`).
 - Class imbalance handled via `BCEWithLogitsLoss(pos_weight = neg/pos on train)`;
-  early stop (patience 25) on val AUROC. `labels.split` is heavily skewed
-  (train ~21.2k / val 78 / test 63) so the test AUROC is high-variance.
+  early stop (patience 25) on val AUROC; the best state is **cloned** (a bare
+  `state_dict()` aliases live weights and silently returned the last epoch).
+- `labels.split` is heavily skewed: accounts 21,221 / 78 / 63 with only
+  **55 / 3 / 2 mules** (train/val/test), so val/test AUROC are close to noise
+  (the script prints a warning). Full-history graph (old): test 0.98;
+  time-sliced (now): val 0.94, test 0.51. A real comparison needs more
+  val/test mules (a generator change).
 - The verdict table compares **different targets** on purpose: champion
-  `test_auroc` (0.9983) is txn-level `is_scam`, the GNN AUROC is account-level
+  `test_auroc` (1.0000) is txn-level `is_scam`, the GNN AUROC is account-level
   `is_mule`; the script labels both and does not roll the champion up to accounts.
-  Conclusion: GNN slightly better at hidden multi-hop mule networks, but needs the
-  whole graph resident at inference, so XGBoost stays in the 150 ms hot path.
+  The printed verdict is computed by `verdict_lines()` from the measured GNN
+  AUROC (usable iff >= `GNN_USEFUL_AUROC` = 0.70) and forward latency vs the
+  150 ms SLO; it never claims the GNN beats the champion (different targets).
+  XGBoost always stays in the per-payment hot path (the GNN scores accounts).
 
 ## Phase 8 federated learning simulation (non-obvious)
 
@@ -178,16 +301,26 @@ formatter/test framework yet.
   holds disjoint customers and no raw data is shared.
 - Each bank trains a local `XGBClassifier` on its own train split (same
   hyperparameters as `train_xgb.py`: hist / aucpr / n_estimators=400 / depth 6 /
-  lr 0.1 / early stop 40) with per-bank `scale_pos_weight`.
-- `fedavg()` averages the two models' **raw margins**
-  (`predict(..., output_margin=True)`) and passes the mean through sigmoid — the
-  correct FedAvg for heterogeneous (non-aligned) tree ensembles. `base_score` is
-  identical (0.5) in both models so averaging it is a no-op; true tree-weight
-  averaging is ill-defined when the trees don't share structure.
-- Evaluates both locals and the global on the **shared** test split (both banks):
-  AUROC + recall@1%FPR (threshold chosen at 1% FPR on each model's own val; the
-  global uses the combined val). The global beats both locals because each local
-  is diluted by the other bank's unseen customers.
+  lr 0.1 / early stop 40) with per-bank `scale_pos_weight`. No adversarial
+  training here (it compares federation setups, not robustness).
+- `fedavg()` averages the two models' **prior-corrected margins**
+  (`predict(..., output_margin=True) - log(spw)` per bank) and passes the mean
+  through sigmoid. This is output-level model averaging (an ensemble) — true
+  tree-weight averaging is ill-defined for non-aligned trees. Subtracting
+  `log(spw)` removes each bank's class-weight shift so neither dominates; the
+  resulting probabilities are base-rate calibrated, so thresholds are tiny
+  (printed in `e` notation).
+- Evaluates both locals and the global on the **shared** test split (both
+  banks): AUROC + recall@1%FPR. Thresholds are chosen at 1% FPR on val
+  **without pooling val**: each local on its own val; the global = mean of
+  the threshold each bank picks for the global model on its own val (only
+  scalars are shared). WIN / TIE / LOSE via `outcome()` (tolerance 1e-4).
+- A **pooled-data** baseline (one model on both banks' train, what data
+  sharing would give) is also trained and printed as "cost of federation".
+  Full run (27 features): locals recall 0.894 / 0.991, global 0.991 (TIE with
+  the best local), pooled 1.000 — federation costs ~0.9 pts vs sharing data.
+  (With the old 18 features the global beat even pooled, i.e. the gain was
+  ensembling; if that recurs the script prints a note saying so.)
 - `--smoke` row-samples train/val/test (100k/20k/20k) for a fast check; the smoke
   test has ~13 positives so its AUROC/recall are high-variance — the full run is
   the real number.
@@ -209,20 +342,35 @@ formatter/test framework yet.
   `report_delay_days`, `report_coverage`, and per-txn `is_in_report`. Both
   `ground_truth_label` and `reported_label` are in `labels.csv`; do not treat
   `reported_label` as ground truth.
-- `data/*.csv` are regenerated artifacts (transactions ~350 MB, features ~670 MB);
-  they are not tracked and should not be committed.
+- `data/*.csv` / `data/*.parquet` are regenerated artifacts (transactions
+  ~350 MB, features ~1.2 GB CSV + ~450 MB parquet); they are not tracked and
+  should not be committed.
 
 ## UI specifics (non-obvious)
 
 - `ui/app.py` is a Streamlit demo (`streamlit run ui/app.py` from repo root). It
   adds `src/` to `sys.path` and imports the real `policy.decide`, `conformal`,
-  and `risk_common`; it does **not** need `data/features.csv` (scenarios are
-  synthetic feature rows) but does load `models/xgb_model.json` +
-  `models/conformal.json` for the live `p_scam` and SHAP panel.
-- Four hardcoded scenario buttons: normal (`{fine}` -> release), investment scam
-  (`{scam}` -> hold, `requires_analyst` at Rs 2,00,000), fake-police screen-share
-  (unsure, 1 hard + soft -> hold + "Priya Alerted" panel), and soft-only unclear
-  (unsure, 0 hard -> nudge with a "Pay anyway" second click).
+  and `risk_common`; it does **not** need `data/features.csv` (scenario
+  features are hardcoded) but does load `models/xgb_model.json` +
+  `models/conformal.json` for the live `p_scam`, conformal set and SHAP.
+- Four scenario buttons. Each scenario's **27 features are copied from a real
+  test-split txn** (`source_txn`, built with `real_features(comb, snd, rcv)`
+  from 9-tuples) and its `amount` is that txn's amount: normal #2391121
+  (Rs 36,308, `{fine}` -> release), investment scam #2861134 (Rs 1,96,538,
+  `{scam}` -> hold + `requires_analyst`), fake-police screen-share #2599999
+  (Rs 3,592, unsure, receiving-hard `d_R=0` only + soft -> hold + "Priya
+  Alerted" panel), and soft-only unclear #2415533 (Rs 4,729, unsure, 0 hard
+  -> nudge with a "Pay anyway" second click). **If the model or features
+  change, re-pick them** so the model-implied sets still match the scripted
+  `conf_set` — `tests/test_ui.py` fails when they drift.
+- **Model-driven by default**: `decide()` gets the model-implied conformal set
+  (live `p_scam` + `load_conformal`). The sidebar toggle "Pin scripted
+  conformal sets" switches to each scenario's scripted `conf_set` instead.
+- **Reasons** passed to `decide()` come from live SHAP via `risk_reasons()`:
+  ranked by SHAP, only features that push risk up **and** whose value is in the
+  risky range (`in_risky_range()`, same bars as the policy hard signals; `g_t`
+  never cited since it is ~constant), one per base feature, max 3. Falls back
+  to the scenario's scripted `reasons` if none qualify or the set is pinned.
 - Each scenario also carries a `phone` / `account_id` / `txn_id` so the UI calls
   the real `integrations.check_fri` + `check_mulehunter` mocks and passes the
   MuleHunter status into `decide()`. Scenario account ids map to known statuses
@@ -231,7 +379,8 @@ formatter/test framework yet.
   amount > Rs 1 Lakh — just the investment scenario). It shows the mock FRI score
   and MuleHunter status plus two buttons ("Approve Release" / "File 1930 Report &
   Block") driven by `st.session_state.analyst_action`; the report button calls
-  `file_1930_report` and shows the NCRP ref id.
+  `file_1930_report` **once on click** and stores it in
+  `st.session_state.report` (reruns reuse it, so the NCRP ref id is stable).
 - **Scam DNA graph**: the investment scenario (held) also renders a directed
   Plotly/NetworkX money-flow graph below the SHAP reasons when the user clicks
   Pay — `victim -> entry mule -> layering -> aggregator -> crypto exit` — gated on
@@ -242,31 +391,31 @@ formatter/test framework yet.
   `📈 Transaction Journey` expander, gated on `sc.get("journey")`.
   `journey_dataframe()` applies a Styler: the final "Escalate" row is red+bold,
   the "Fake Profit" row (a credit) is green. Day 5 amount = the scenario's
-  `amount` (Rs 2,00,000).
+  `amount` (Rs 1,96,538).
 - **Tabs**: the page body is split into two `st.tabs` — "Scenario Demo" (all the
   scenario UI above) and "Sandbox Mode". The sidebar (scenario buttons + model
   metrics) stays global, outside the tabs.
-- **Sandbox Mode** (second tab): free-form inputs to exercise the Two-Signal Rule
-  directly. `st.slider` for Amount (₹1,000–₹5,00,000, step ₹1,000) and Mule Hops
-  (0–3), plus a `st.toggle` for Screen Shared. "Simulate Payment" builds a mock
-  feature dict (`n_t/e_t/g_t/pi_t = 0`, `z_t = amount/100_000` i.e. ₹ in lakhs,
-  `d_R = mule_hops`) and soft dict (`is_screen_shared`), then calls `decide()`
-  with the conformal set **pinned to `{fine, scam}`** (the only branch where the
-  sliders change the outcome). Result is transient (recomputed on click only):
-  Release/Nudge/Hold via `st.success`/`warning`/`error`, with the exact
-  `decide()` JSON below it.
-- Design choice: the **scenario's pinned conformal set** drives `decide()` (so
-  the demo matches the spec deterministically); the model-implied set from the
-  live `p_scam` is shown next to it in the judge view for reference. The 6
-  combined features are mirrored into the `*_snd`/`*_rcv` columns to feed the
-  18-col model.
+- **Sandbox Mode** (second tab): sliders for the journey features (`n_t`,
+  `e_t`, `z_t`, `pi_t`, `d_R`, `v_t`, `ptr_t`; `g_t` fixed at 1, `zc_t` derived
+  as `z_t + log(1 + v_t)`, i.e. earlier same-payee payments assumed the same
+  size) with defaults at typical legit values, an Amount slider (drives
+  `requires_analyst` only), and soft
+  toggles (screen shared, voice call, chat stage). "Simulate Payment" scores
+  the row with the live model and uses the **model-implied conformal set**;
+  the "Force the unsure set" toggle pins `{fine, scam}` to test the hard/soft
+  rule directly. The 6 features are mirrored into `*_snd`/`*_rcv` (an
+  approximation; `synthesized_matrix()` uses all 18 when given). Result is
+  transient (recomputed on click only), with the exact `decide()` JSON below.
 - Hold shows a static 60-min auto-release badge plus an "Advance 60 min (demo)"
   button (no live countdown / no auto-refresh).
+- A hold resolves **exactly once**: analyst Approve (released), analyst Report
+  (blocked, auto-release cancelled), or Advance 60 min (auto-released, analyst
+  actions closed) — whichever comes first hides the other controls.
 
 ## Layout
 
 - `src/` — application code and entrypoints
 - `ui/` — frontend / user interface
-- `models/` — model code or weights
-- `data/` — datasets (generated)
-- `docs/` — documentation
+- `models/` — trained model artifacts (generated JSON, gitignored)
+- `data/` — datasets (generated CSVs, gitignored)
+- `.claude/launch.json` — launches the Streamlit UI from `.venv` on port 8501
