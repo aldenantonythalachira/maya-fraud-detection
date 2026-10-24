@@ -53,3 +53,5 @@ uvicorn==0.54.0
 watchdog==6.0.0
 websockets==17.3
 xgboost==3.4.1
+psycopg==3.3.6
+psycopg-binary==3.3.6

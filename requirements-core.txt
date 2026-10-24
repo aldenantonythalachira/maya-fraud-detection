@@ -12,3 +12,4 @@ jinja2>=3.1.5,<4
 # Risk-scoring API (src/api.py)
 fastapi>=0.110,<1
 uvicorn>=0.29,<1
+psycopg[binary]>=3.2,<4
