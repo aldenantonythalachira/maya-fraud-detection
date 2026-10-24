@@ -18,3 +18,6 @@ venv/
 tmp/
 data/simulator*.sqlite*
 data/evaluation*.json
+
+# Built website bundle (contains trained weights; deployed to the Space only)
+dist/

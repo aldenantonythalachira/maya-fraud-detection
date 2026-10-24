@@ -31,7 +31,7 @@ from conformal import (
     SET_FINE, SET_NAMES, SET_SCAM, SET_UNSURE, classify as conformal_classify, load_conformal,
 )
 from integrations import check_fri, check_mulehunter, file_1930_report
-from policy import DEFAULT_THRESHOLDS, active_signals, decide
+from policy import AUTO_RELEASE_MINUTES, DEFAULT_THRESHOLDS, HOLD_ANALYST_AMOUNT, active_signals, decide
 from risk_common import ENGLISH_REASONS, FEATURE_COLUMNS
 from scenario_features import SCENARIO_FEATURES, SCENARIO_STORY
 
@@ -417,7 +417,7 @@ with tab_demo:
 
                 if decision["requires_analyst"]:
                     st.error(
-                        "🧑💼 **Analyst review required** — amount exceeds Rs 1,00,000; "
+                        f"🧑💼 **Analyst review required** — amount exceeds {inr(HOLD_ANALYST_AMOUNT)}; "
                         "routed to the bank fraud desk."
                     )
                     with st.expander("🧑💼 Analyst Dashboard", expanded=True):
@@ -461,8 +461,8 @@ with tab_demo:
                 elif st.session_state.analyst_action == "approved":
                     pass  # already released by the analyst
                 elif st.session_state.released:
-                    st.success("Auto-released after 60 minutes — payment sent.")
-                elif st.button("⏭ Advance 60 min (demo)", width="stretch"):
+                    st.success(f"Auto-released after {AUTO_RELEASE_MINUTES} minutes — payment sent.")
+                elif st.button(f"⏭ Advance {AUTO_RELEASE_MINUTES} min (demo)", width="stretch"):
                     st.session_state.released = True
                     st.rerun()
 

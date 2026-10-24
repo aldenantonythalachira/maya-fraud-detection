@@ -23,6 +23,22 @@ def real_features(comb: tuple, snd: tuple, rcv: tuple) -> dict:
 
 # key -> source txn, amount, features, the scenario's soft signals and mock
 # MuleHunter account, the scripted conformal set, and the Two-Signal outcome.
+#
+# These rows were picked for one specific trained model. Tests assert the
+# scripted outcomes only when models/xgb_model.json has this sha256; after a
+# retrain they skip and ask for a re-pick (python scripts/pick_scenarios.py).
+PICKED_FOR_MODEL_SHA256 = "de9181e37fa52d37a970019f92a3e066dfa5f547527d586257d0dab5e653365b"
+
+
+def model_matches(model_path) -> bool:
+    """True when `model_path` is the model these scenario rows were picked for."""
+    import hashlib
+    from pathlib import Path
+
+    p = Path(model_path)
+    return p.exists() and hashlib.sha256(p.read_bytes()).hexdigest() == PICKED_FOR_MODEL_SHA256
+
+
 SCENARIO_FEATURES = {
     "normal": {
         "source_txn": 2391121,

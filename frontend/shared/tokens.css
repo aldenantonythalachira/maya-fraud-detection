@@ -61,6 +61,8 @@
 }
 
 *, *::before, *::after { box-sizing: border-box; }
+/* `hidden` must always win over component display rules (grid/flex). */
+[hidden] { display: none !important; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0;

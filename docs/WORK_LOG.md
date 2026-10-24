@@ -126,3 +126,31 @@
   Edge screenshots of every scenario at 360–1920 px in both languages, no
   console errors; keyboard-only pay reaches a hold. Hindi copy needs a native
   speaker's review.
+
+### Own website, paired judge view, review fixes (branch feature/live-site)
+
+- Judges' view is now its own page: it creates an in-memory demo room
+  (`src/rooms.py`) and shows a QR + code; phones join from the QR and every
+  payment they score is published to the room by the server (SSE stream with
+  a JSON polling fallback). Per-client rate limits; rooms, phones and events
+  are capped and expire.
+- Frontends redesigned to be more minimal (no boxes or dark bars; one
+  settings sheet; outcomes as a thin coloured rule). Fixed a CSS class of bug
+  where `display: grid/flex` overrode `[hidden]`.
+- Public site: `deploy/space/` + `scripts/build_space.py` build a ~3 MB bundle
+  (slim deps, trained weights only in `dist/`, never in Git) for Hugging Face
+  Spaces. Verified the bundle runs on its own in a slim venv (no Docker on
+  this PC) with the two-device flow and per-IP limits behind a proxy header.
+- Review fixes: SHAP fallback now explains only the scored trees (TreeExplainer
+  already did) with an additivity test; outcome-specific scenario tests are
+  guarded by the model hash, and `scripts/pick_scenarios.py` re-picks the
+  scenarios after a retrain (reproduces the current four).
+- Added "Your own payment" to the user app: a plain-language form mapped to
+  the 27 signals (`frontend/shared/custom.js`) from a typical-legit baseline.
+  Prototyped and checked against the model first (ordinary -> release,
+  first-time + pressure -> hold, reported recipient -> hold); verified in Edge
+  with the payment appearing live on the judge screen.
+- Hosting: Hugging Face now requires PRO for Docker Spaces (HTTP 402 on create),
+  so the site deploys to Render's free tier instead: `serve.py` binds `$PORT`,
+  `render.yaml` Blueprint, and `build_space.py --github` force-pushes the bundle
+  to a private deploy repo (`ldcode20/maya-site`). Measured ~320 MB RSS.

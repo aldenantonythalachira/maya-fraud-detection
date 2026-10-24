@@ -1,95 +1,223 @@
-// Judges' demo: the live phone on the left, why Maya decided on the right.
-import { getModel, getScenarios, rupees, score, signalGroups } from "/static/api.js";
+// Judges' view: its own page. Shows a QR + code; phones that join send their
+// payments here live (the server publishes its own results). Also: built-in
+// scenarios for the presenter, and Evidence / Robustness / Model card / Try it.
+import { createRoom, getModel, getScenarios, rupees, score, signalGroups, store } from "/static/api.js";
 import { REASONS, SIGNAL_NAMES, initialLang, rememberLang, t } from "/static/i18n.js";
 
 const $ = (sel) => document.querySelector(sel);
 const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const ROOM_KEY = "maya-judge-room";
 
 let lang = initialLang();
-let scenarios = [], current = null, result = null, model = null, phoneReady = false;
+let scenarios = [], model = null;
+let room = null;                 // { room, code, watch_token }
+let events = [];                 // newest last
+let shown = null;                // the event on the board
+let source = null, pollTimer = null, statusTimer = null, lastSeq = 0, sseFailures = 0;
 const L = () => t(lang);
 const pick = (obj) => (obj && typeof obj === "object" ? obj[lang] ?? obj.en : obj);
-const phone = () => $("#phone").contentWindow;
-const send = (msg) => phoneReady && phone().postMessage({ maya: true, ...msg }, location.origin);
+const scenarioFor = (ev) => scenarios.find((s) => s.key === ev?.context?.scenario);
 
-// --- board ---------------------------------------------------------------------
-
-function resetBoard() {
-  result = null;
-  $("#story").textContent = pick(current.story);
-  $("#prompt").hidden = false;
-  const gate = $("#gate");
-  gate.classList.remove("reveal");
-  gate.dataset.state = "waiting";
-  document.querySelectorAll(".group").forEach((g) => {
-    g.classList.remove("lit");
-    g.querySelector(".state").textContent = "";
-    g.querySelector(".facts").innerHTML = "";
-  });
-  $("#verdict").hidden = true;
-  renderPath();
-  renderEvidence();
+function notice(text) {
+  const el = $("#notice");
+  el.textContent = text;
+  el.hidden = false;
+  clearTimeout(notice.timer);
+  notice.timer = setTimeout(() => { el.hidden = true; }, 5000);
 }
 
-function renderBoard(res, { animate = true } = {}) {
-  result = res;
-  $("#prompt").hidden = true;
-  const groups = signalGroups(res);
+function amountMarkup(amt) {
+  return `<span class="sym" aria-hidden="true">₹</span>${esc(rupees(amt).replace("₹", ""))}`;
+}
+
+// --- the room: QR, code, phones --------------------------------------------------
+
+function qrSvg(text, cell) {
+  if (typeof window.qrcode !== "function") return "";
+  const qr = window.qrcode(0, "M");
+  qr.addData(text);
+  qr.make();
+  return qr.createSvgTag({ cellSize: cell, margin: 0, scalable: true });
+}
+
+function joinUrl() { return `${location.origin}/app/?code=${room.code}`; }
+
+function renderRoom() {
+  if (!room) return;
+  $("#qr").innerHTML = qrSvg(joinUrl(), 8);
+  $("#qr-mini").innerHTML = qrSvg(joinUrl(), 2);
+  $("#code").textContent = room.code;
+  $("#chip-code").textContent = room.code;
+  $("#join-url").textContent = `${location.host}/app`;
+}
+
+function renderPhones(n) {
+  const el = $("#phones");
+  el.dataset.n = String(n);
+  el.textContent = L().phones(n);
+  el.classList.toggle("on", n > 0);
+  $("#chip-phones").textContent = L().phones(n);
+}
+
+async function fetchJSON(url) {
+  const r = await fetch(url, { signal: AbortSignal.timeout(8000) });
+  if (!r.ok) { const e = new Error(`HTTP ${r.status}`); e.status = r.status; throw e; }
+  return r.json();
+}
+
+async function openRoom(fresh = false) {
+  stopLive();
+  room = fresh ? null : store.get(ROOM_KEY);
+  if (room) {
+    try {
+      const st = await fetchJSON(`/v1/rooms/${encodeURIComponent(room.room)}?watch=${encodeURIComponent(room.watch_token)}`);
+      renderPhones(st.phones);
+    } catch { room = null; }
+  }
+  if (!room) {
+    try {
+      room = await createRoom();
+      store.set(ROOM_KEY, room);
+      renderPhones(0);
+    } catch {
+      notice(L().error_network);
+      return;
+    }
+  }
+  renderRoom();
+  startLive();
+}
+
+function stopLive() {
+  if (source) { source.close(); source = null; }
+  clearInterval(pollTimer); pollTimer = null;
+  clearInterval(statusTimer); statusTimer = null;
+}
+
+function startLive() {
+  const base = `/v1/rooms/${encodeURIComponent(room.room)}`;
+  const watch = `watch=${encodeURIComponent(room.watch_token)}`;
+  sseFailures = 0;
+  if ("EventSource" in window) {
+    source = new EventSource(`${base}/events?${watch}`);
+    source.addEventListener("payment", (m) => receive(JSON.parse(m.data)));
+    source.addEventListener("status", (m) => renderPhones(JSON.parse(m.data).phones));
+    source.addEventListener("end", () => roomLost());
+    source.onopen = () => { sseFailures = 0; };
+    source.onerror = () => {
+      // EventSource retries on its own; if a proxy keeps breaking it, poll instead.
+      if (++sseFailures >= 3) { source.close(); source = null; startPolling(base, watch); }
+    };
+  } else {
+    startPolling(base, watch);
+  }
+  statusTimer = setInterval(async () => {
+    try { renderPhones((await fetchJSON(`${base}?${watch}`)).phones); }
+    catch (e) { if (e.status === 404) roomLost(); }
+  }, 8000);
+}
+
+function startPolling(base, watch) {
+  if (pollTimer) return;
+  pollTimer = setInterval(async () => {
+    try {
+      const data = await fetchJSON(`${base}/events?${watch}&format=json&after=${lastSeq}`);
+      data.events.forEach(receive);
+      renderPhones(data.status.phones);
+    } catch (e) { if (e.status === 404) roomLost(); }
+  }, 1500);
+}
+
+function roomLost() {
+  store.drop(ROOM_KEY);
+  notice(L().room_lost);
+  openRoom(true);
+}
+
+function receive(ev) {
+  if (ev.seq && ev.seq <= lastSeq) return;
+  if (ev.seq) lastSeq = ev.seq;
+  events.push(ev);
+  events = events.slice(-8);
+  show(ev, true);
+}
+
+// --- the board -----------------------------------------------------------------
+
+function show(ev, animate) {
+  shown = ev;
+  $("#idle").hidden = true;
+  $("#pair-chip").hidden = !room;
+  $("#board").hidden = false;
+  const sc = scenarioFor(ev);
+  $("#who").textContent = sc ? pick(sc.payee) : (ev.context?.payee || (lang === "hi" ? "आपका भुगतान" : "Your payment"));
+  $("#big-amount").innerHTML = amountMarkup(ev.amount_inr);
+  $("#story").textContent = sc ? pick(sc.story)
+    : (ev.context?.note || (ev.context?.scenario === "custom" ? L().custom_entry : ""));
+
+  const groups = signalGroups(ev);
   const gate = $("#gate");
   gate.classList.remove("reveal");
   gate.dataset.state = "waiting";
   document.querySelectorAll(".group").forEach((g) => g.classList.remove("lit"));
   void gate.offsetWidth;  // restart the sequence
   if (animate) gate.classList.add("reveal");
-
   for (const name of ["history", "receiving", "phone"]) {
     const el = document.querySelector(`.group[data-group="${name}"]`);
     const keys = groups[name];
-    const facts = keys.map((k) => REASONS[lang][k]).filter(Boolean);
     el.classList.toggle("lit", keys.length > 0);
     el.querySelector(".state").textContent = keys.length ? L().risky : L().none_fired;
-    el.querySelector(".facts").innerHTML = keys.length ? facts.slice(0, 3).map((f) => `<li>${esc(f)}</li>`).join("") : "";
+    el.querySelector(".facts").innerHTML = keys.map((k) => REASONS[lang][k]).filter(Boolean).slice(0, 3)
+      .map((f) => `<li>${esc(f)}</li>`).join("");
   }
-  gate.dataset.state = res.action;
+  gate.dataset.state = ev.action;
 
-  const setWord = { "{fine}": L().set_fine, "{scam}": L().set_scam, "{fine, scam}": L().set_unsure }[res.conformal_set];
-  $("#model-line").innerHTML = `${esc(L().model_line)}: <strong>${esc(setWord)}</strong> (p = ${res.p_scam.toFixed(3)})`;
-  const hard = (groups.history.length > 0) + (groups.receiving.length > 0);
-  const rule = res.conformal_set === "{fine}" ? L().rule_fine
-    : res.action === "hold" ? L().rule_hold : hard + (groups.phone.length > 0) ? L().rule_one : L().rule_none;
-  $("#rule-line").textContent = rule;
   const word = $("#decision");
-  word.textContent = L()[`action_${res.action}`];
-  word.dataset.action = res.action;
-  $("#analyst").textContent = res.requires_analyst ? L().analyst : "";
-  $("#speed").textContent = `${Math.max(1, Math.round(res.latency_ms))} ms · model ${res.model_version.slice(0, 8)} · ${res.policy_version}`;
+  word.textContent = L()[`action_${ev.action}`];
+  word.dataset.action = ev.action;
+  $("#analyst").textContent = ev.requires_analyst ? L().analyst : "";
+  const hard = (groups.history.length > 0) + (groups.receiving.length > 0);
+  $("#rule-line").textContent = ev.conformal_set === "{fine}" ? L().rule_fine
+    : ev.action === "hold" ? L().rule_hold : hard + (groups.phone.length > 0) ? L().rule_one : L().rule_none;
+  const setWord = { "{fine}": L().set_fine, "{scam}": L().set_scam, "{fine, scam}": L().set_unsure }[ev.conformal_set];
+  $("#model-line").textContent = `${L().model_line}: ${setWord} · p = ${ev.p_scam.toFixed(3)} · ${Math.max(1, Math.round(ev.latency_ms))} ms`;
   const verdict = $("#verdict");
-  verdict.hidden = false;
   if (animate) {
     verdict.classList.add("pending");
     requestAnimationFrame(() => requestAnimationFrame(() => verdict.classList.remove("pending")));
   }
+  renderPath(sc);
+  renderRecent();
   renderEvidence();
 }
 
-function renderPath() {
-  const nodes = current?.money_path;
+function renderPath(sc) {
+  const nodes = sc?.money_path;
   $("#path").hidden = !nodes;
-  if (!nodes) return;
-  $("#path-list").innerHTML = nodes.map((n) => `<li><strong>${esc(pick(n.name))}</strong><span>${esc(pick(n.role))}</span></li>`).join("");
+  if (nodes) $("#path-list").innerHTML = nodes.map((n) => `<li><strong>${esc(pick(n.name))}</strong><span>${esc(pick(n.role))}</span></li>`).join("");
+}
+
+function renderRecent() {
+  const list = events.filter((e) => e.seq);
+  $("#recent").hidden = list.length < 2;
+  $("#recent-list").innerHTML = list.slice().reverse().map((e) => {
+    const sc = scenarioFor(e);
+    const who = sc ? pick(sc.payee) : (e.context?.payee || "—");
+    return `<li><button type="button" data-seq="${e.seq}" aria-current="${e === shown}"><i data-action="${esc(e.action)}"></i>${esc(who)} · ${esc(rupees(e.amount_inr))}</button></li>`;
+  }).join("");
 }
 
 // --- tabs ----------------------------------------------------------------------
 
 function renderEvidence() {
   const panel = $("#panel-evidence");
-  const contributions = result?.explanation?.contributions;
-  if (!contributions) { panel.innerHTML = `<p>${esc(L().no_evidence)}</p>`; return; }
+  const contributions = shown?.explanation?.contributions;
+  if (!contributions?.length) { panel.innerHTML = `<p>${esc(L().no_evidence)}</p>`; return; }
   const max = Math.max(...contributions.map((c) => Math.abs(c.shap)), 1e-9);
   const side = (f) => f.endsWith("_snd") ? (lang === "hi" ? "भेजने वाला" : "payer")
     : f.endsWith("_rcv") ? (lang === "hi" ? "पाने वाला" : "payee") : (lang === "hi" ? "मिलाकर" : "combined");
   const fmt = (v) => v === null ? "—" : Math.abs(v) >= 100 ? v.toFixed(0) : v.toFixed(2);
-  const TOP = 10;  // the strongest contributions first; the rest on request
+  const TOP = 10;
   const showAll = panel.dataset.all === "1";
   const moreLabel = showAll
     ? (lang === "hi" ? `सबसे असरदार ${TOP} दिखाएँ` : `Show the strongest ${TOP}`)
@@ -153,8 +281,6 @@ function renderModelCard() {
   </div>`;
 }
 
-// --- try it --------------------------------------------------------------------
-
 const SLIDERS = [
   { key: "amount", min: 1000, max: 500000, step: 1000, value: 50000 },
   { key: "n_t", min: 0, max: 100, step: 1, value: 56 },
@@ -177,11 +303,24 @@ function renderSliders() {
   }).join("");
 }
 
+/** Score locally (presenter / Try it) and show it like a phone's payment. */
+async function scoreHere(payload, context) {
+  try {
+    const res = await score(payload, true);
+    const ev = { ...res, amount_inr: payload.amount_inr, soft_signals: payload.soft_signals, context };
+    events.push(ev); events = events.slice(-8);
+    show(ev, true);
+    $("#board").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" });
+  } catch (err) {
+    notice(err.status === 503 ? L().error_models : L().error_network);
+  }
+}
+
 $("#sliders").addEventListener("input", (e) => {
   if (e.target.matches("input[type=range]")) $(`#out-${e.target.name}`).textContent = e.target.value;
 });
 
-$("#try-form").addEventListener("submit", async (e) => {
+$("#try-form").addEventListener("submit", (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
   const v = (k) => Number(f.get(k));
@@ -193,26 +332,17 @@ $("#try-form").addEventListener("submit", async (e) => {
   for (const [k, x] of Object.entries(base)) { features[k] = x; features[`${k}_snd`] = x; features[`${k}_rcv`] = x; }
   const soft_signals = { is_screen_shared: f.has("is_screen_shared"), is_voice_active: f.has("is_voice_active"),
                          chat_stage: f.has("chat_demand") ? "payment_demand" : "none" };
-  try {
-    const res = await score({ features, amount_inr: v("amount"), soft_signals }, true);
-    $("#story").textContent = lang === "hi" ? `आपका भुगतान: ${rupees(v("amount"))}` : `Your payment: ${rupees(v("amount"))}`;
-    $("#path").hidden = true;
-    renderBoard(res);
-    $("#story").scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
-  } catch (err) {
-    $("#rule-line").textContent = err.message;
-  }
+  scoreHere({ features, amount_inr: v("amount"), soft_signals }, { payee: lang === "hi" ? "आपका भुगतान" : "Your payment" });
 });
 
-// --- tabs behaviour (ARIA tabs with arrow keys) ---------------------------------
-
+// ARIA tabs with arrow keys
 const tabs = [...document.querySelectorAll('[role="tab"]')];
 function selectTab(tab) {
-  for (const t of tabs) {
-    const on = t === tab;
-    t.setAttribute("aria-selected", String(on));
-    t.tabIndex = on ? 0 : -1;
-    document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+  for (const x of tabs) {
+    const on = x === tab;
+    x.setAttribute("aria-selected", String(on));
+    x.tabIndex = on ? 0 : -1;
+    document.getElementById(x.getAttribute("aria-controls")).hidden = !on;
   }
   tab.focus();
 }
@@ -224,29 +354,22 @@ tabs.forEach((tab, i) => {
   });
 });
 
-// --- scenarios, language, phone link ------------------------------------------------
+// --- presenter, language, clicks --------------------------------------------------
 
-function renderScenarioBar() {
-  $("#scenario-bar").innerHTML = scenarios.map((s) =>
-    `<button type="button" data-key="${esc(s.key)}" aria-pressed="${s.key === current?.key}">${esc(pick(s.label))}<small>${esc(rupees(s.amount_inr))}</small></button>`).join("");
+function renderPresenter() {
+  $("#presenter").innerHTML = scenarios.map((s) =>
+    `<button type="button" data-key="${esc(s.key)}">${esc(pick(s.label))}<small>${esc(rupees(s.amount_inr))}</small></button>`).join("");
 }
 
-function choose(key) {
-  current = scenarios.find((s) => s.key === key) ?? scenarios[0];
-  renderScenarioBar();
-  resetBoard();
-  send({ type: "load", key: current.key });
-}
-
-function setLang(next, { tellPhone = true } = {}) {
+function setLang(next) {
   lang = next;
   rememberLang(lang);
   document.querySelectorAll("[data-lang]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
   document.querySelectorAll("[data-i18n]").forEach((el) => { const s = L()[el.dataset.i18n]; if (typeof s === "string") el.textContent = s; });
-  if (current) { renderScenarioBar(); $("#story").textContent = pick(current.story); renderPath(); }
-  if (result) renderBoard(result, { animate: false }); else renderEvidence();
+  renderPresenter();
+  if (shown) show(shown, false); else renderEvidence();
+  if (room) renderPhones(Number.parseInt($("#phones").dataset.n ?? "0", 10) || 0);
   renderRobust(); renderModelCard(); renderSliders();
-  if (tellPhone) send({ type: "lang", lang });
 }
 
 document.addEventListener("click", (e) => {
@@ -257,33 +380,29 @@ document.addEventListener("click", (e) => {
     $("#evidence-more").focus();
     return;
   }
-  const sc = e.target.closest("#scenario-bar [data-key]");
-  if (sc) choose(sc.dataset.key);
   const lb = e.target.closest("[data-lang]");
-  if (lb) setLang(lb.dataset.lang);
-});
-
-window.addEventListener("message", (e) => {
-  if (e.origin !== location.origin || !e.data?.maya) return;
-  if (e.data.type === "loaded") {
-    if (!phoneReady) { phoneReady = true; send({ type: "lang", lang }); if (current && e.data.key !== current.key) send({ type: "load", key: current.key }); }
+  if (lb) { setLang(lb.dataset.lang); return; }
+  if (e.target.closest("#presenter-toggle")) { $("#presenter").hidden = !$("#presenter").hidden; return; }
+  if (e.target.closest("#new-code")) { openRoom(true); return; }
+  const sc = e.target.closest("#presenter [data-key]");
+  if (sc) {
+    const s = scenarios.find((x) => x.key === sc.dataset.key);
+    scoreHere({ features: s.features, amount_inr: s.amount_inr, soft_signals: s.soft_signals,
+                mulehunter_status: s.mulehunter_status }, { scenario: s.key, payee: s.payee.en, note: s.note.en });
+    return;
   }
-  if (e.data.type === "decision" && e.data.key === current?.key) {
-    $("#story").textContent = pick(current.story);
-    renderPath();
-    renderBoard(e.data.result);
-  }
-  if (e.data.type === "lang" && e.data.lang !== lang) setLang(e.data.lang, { tellPhone: false });
+  const recent = e.target.closest("#recent [data-seq]");
+  if (recent) { const ev = events.find((x) => String(x.seq) === recent.dataset.seq); if (ev) show(ev, false); }
+  if (e.target.closest(".wordmark")) { e.preventDefault(); shown = null; $("#board").hidden = true; $("#idle").hidden = false; $("#pair-chip").hidden = true; $("#path").hidden = true; $("#recent").hidden = true; renderEvidence(); }
 });
 
 (async function start() {
   try {
     [scenarios, model] = await Promise.all([getScenarios(), getModel().catch(() => null)]);
   } catch {
-    $("#story").textContent = L().error_network;
+    $("#idle-title").textContent = L().error_title;
     return;
   }
-  current = scenarios.find((s) => s.key === "investment") ?? scenarios[0];
-  setLang(lang, { tellPhone: false });
-  choose(current.key);
+  setLang(lang);
+  await openRoom(false);
 })();

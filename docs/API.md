@@ -129,21 +129,42 @@ built → 503.
   feature's value, Tree-SHAP contribution (log-odds) and whether its value is in
   the risky range. Off by default to keep the hot path fast.
 
-## 4. Frontends
+## 4. Demo rooms (a judge screen follows phones live)
+
+| Method & path | Who | Does |
+|---|---|---|
+| `POST /v1/rooms` | judge screen | creates a room: `{room, code, watch_token, expires_in}` (code: 6 characters, no 0/O/1/I/L) |
+| `POST /v1/rooms/join` `{code}` | phone | returns a `publish_token` (at most 5 phones per room) |
+| `POST /v1/score` + `"room": publish_token`, optional `"context": {scenario, payee, note}` | phone | scores as usual; the **server** then publishes its own result to the room (`room_published` in the response). A bad or expired token never fails the score. |
+| `GET /v1/rooms/{room}?watch=…` | judge screen | status: code, phones, events, expiry |
+| `GET /v1/rooms/{room}/events?watch=…` | judge screen | **Server-Sent Events** (`event: payment`, periodic `event: status`, `event: end` when the room expires); replays the last 20 on connect, resumes from `Last-Event-ID`. `&format=json&after=N` is a polling fallback. |
+
+Rooms are in memory (one server process), live 3 hours, and are capped at 500
+rooms, 5 phones and 100 kept events per room. A phone can't post a decision: the
+score request schema rejects extra fields, and only server-computed results are
+published. Per-client rate limits: 120 scores, 20 room creations and 30 joins
+per minute (`MAYA_RATE_LIMIT=0` turns them off; behind a proxy set
+`MAYA_TRUST_PROXY=1` to use `X-Forwarded-For`).
+
+## 5. Frontends
 
 Served by the same app (plain HTML / CSS / ES modules, no build step):
 
 | URL | What | For |
 |---|---|---|
-| `/app/` | Everyday-user payment app: pay → Maya's check → hold / nudge / receipt, English / हिंदी | phones (360 px up) |
-| `/demo/` | Judges' demo: the live user app beside the decision board (three signal groups, the two-signal gate, the decision), money path, and tabs for Evidence, Robustness, Model card and Try it | projector (1920×1080), laptops |
+| `/app/` | Everyday-user payment app: pay → Maya's check → hold / nudge / receipt, English / हिंदी. `?code=XXXXXX` (the QR) connects it to a demo screen; Settings has language, connect / disconnect, the scenarios and **Your own payment** (a plain-language form — payee, amount, usual payment size, first time paying, link to reported fraud, phone signals — mapped to the 27 signals by `frontend/shared/custom.js`). | phones (360 px up) |
+| `/demo/` | Judges' view, its own page: a QR + code to join, then each phone payment live (three signal groups, the two-signal gate, the decision), recent payments, money path, and Evidence / Robustness / Model card / Try it. "Run the built-in scenarios here" works without a phone. | projector (1920×1080), laptops |
 | `/` | redirects to `/demo/` | |
 
-`/app/?s=police&lang=hi` opens a scenario in a language; `/app/?embed=1` is the
-mode the demo uses (it then takes `postMessage` commands from the demo page).
-Fonts (Anek Latin + Devanagari, OFL) are self-hosted under `/static/fonts/`, so
-the demo works offline. The Hindi copy is a draft for the demo: have a native
+`/app/?s=police&lang=hi` opens a scenario in a language. Fonts (Anek Latin +
+Devanagari, OFL) and the QR encoder (`qrcode.js`, MIT) are self-hosted under
+`/static/`, so the demo works offline. The Hindi copy is a draft: have a native
 speaker check it before public use.
+
+**Two servers in this repository:** this API (`uvicorn api:app --app-dir src`,
+also what the public demo site runs; see `docs/DEPLOY_SPACE.md`) and Ashrith's
+V4 product (`run_demo.py`, when merged). Both use `/app/` and `/demo/` for their
+own frontends, so which UI you see depends on which server you started.
 
 ## What a real integration would still need
 

@@ -31,7 +31,9 @@ from torch_geometric.utils import to_undirected
 
 from sklearn.metrics import roc_auc_score
 
-CHAMPION_LATENCY_MS = 150.0  # per-payment SLO from the spec
+from risk_common import LATENCY_SLO_MS  # noqa: E402
+
+CHAMPION_LATENCY_MS = LATENCY_SLO_MS  # per-payment SLO from the spec
 GNN_USEFUL_AUROC = 0.70  # below this the challenger has not learned mule-ness
 
 

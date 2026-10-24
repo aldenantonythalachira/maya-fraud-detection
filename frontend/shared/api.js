@@ -23,10 +23,24 @@ export async function api(path, body) {
 export const getScenarios = () => api("/v1/demo/scenarios");
 export const getModel = () => api("/v1/model");
 
-/** Score a scenario (or any feature row) through the hot path. */
-export function score({ features, amount_inr, soft_signals, mulehunter_status }, explain = false) {
-  return api("/v1/score", { features, amount_inr, soft_signals, mulehunter_status: mulehunter_status ?? null, explain });
+/** Score a scenario (or any feature row) through the hot path. With `room`
+ *  (a publish token), the server also shows the result on that demo screen. */
+export function score({ features, amount_inr, soft_signals, mulehunter_status }, explain = false,
+                      { room = null, context = null } = {}) {
+  const body = { features, amount_inr, soft_signals, mulehunter_status: mulehunter_status ?? null, explain };
+  if (room) Object.assign(body, { room, context });
+  return api("/v1/score", body);
 }
+
+export const createRoom = () => api("/v1/rooms", {});
+export const joinRoom = (code) => api("/v1/rooms/join", { code });
+
+/** sessionStorage that never throws (private mode, blocked storage). */
+export const store = {
+  get(key) { try { return JSON.parse(sessionStorage.getItem(key)); } catch { return null; } },
+  set(key, value) { try { sessionStorage.setItem(key, JSON.stringify(value)); } catch { /* ignore */ } },
+  drop(key) { try { sessionStorage.removeItem(key); } catch { /* ignore */ } },
+};
 
 /** ₹ with Indian digit grouping: 196538.18 -> ₹1,96,538 */
 export function rupees(amount, { paise = false } = {}) {

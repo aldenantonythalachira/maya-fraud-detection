@@ -90,8 +90,20 @@ interpreter: activate it (`.venv\Scripts\activate`) or call
 - Risk-scoring API: `python -m uvicorn api:app --app-dir src` (needs `models/`),
   then `python scripts/demo_bank_client.py [--url ...]`. Reference: `docs/API.md`.
   The same server hosts the web frontends: `/app/` (user app) and `/demo/`
-  (judges' demo). `python src/attack_sim.py --json-out models/attack_results.json`
+  (judges' view, QR pairing). `python src/attack_sim.py --json-out models/attack_results.json`
   feeds the demo's Robustness tab.
+- Public demo site: `python scripts/build_space.py` builds `dist/space/`
+  (gitignored; includes the trained bundle, so weights never enter the team
+  repo). `--github USER/maya-site` force-pushes it to a private deploy repo that
+  **Render** (free, `render.yaml` Blueprint) builds; `--upload USER/maya
+  [--private]` targets Hugging Face Spaces (Docker Spaces now need PRO: a free
+  account gets HTTP 402). `serve.py` binds `$PORT` (Render) or 7860, one worker
+  (rooms are in memory), `MAYA_TRUST_PROXY=1`. ~320 MB RSS. Slim deps in
+  `deploy/space/requirements.txt`. See `docs/DEPLOY_SPACE.md`.
+- After retraining: `python scripts/pick_scenarios.py` re-picks the four demo
+  transactions and prints rows + `PICKED_FOR_MODEL_SHA256` for
+  `src/scenario_features.py`. Outcome-specific UI/API tests run only when the
+  model hash matches (they skip with that instruction otherwise).
 - Tests: `python -m pytest` (~15-35s, 92 tests incl. the unittest-style payment
   review / safeguard suites). `tests/test_pipeline.py` runs the
   whole smoke chain (generator -> features with the exact brute-force check ->
@@ -181,6 +193,9 @@ interpreter: activate it (`.venv\Scripts\activate`) or call
   92.1% / 0.23% / 0.23.
 - SHAP uses log-odds (`TreeExplainer` on the booster), with native
   `pred_contribs=True` fallback for NaN rows; positive SHAP increases scam risk.
+  Both explain exactly the trees the model scores with (early stopping keeps
+  `best_iteration + 1`; the fallback passes `iteration_range`) —
+  `tests/test_reasons.py` checks SHAP sum + base == the scored margin.
 - `models/*.json` are generated artifacts; do not commit them alongside `data/`.
 
 ## Phase 4 action policy specifics (non-obvious)
@@ -239,9 +254,22 @@ interpreter: activate it (`.venv\Scripts\activate`) or call
     part-way on a hold (red dashed remainder). Plain-language reasons come from
     `reason_features` via `i18n.REASONS` (en/hi), plus the phone's own soft
     signals; avatar initials always come from the English name.
-  - Judges' demo embeds `/app/?embed=1` and talks to it with `postMessage`
-    (`load`, `lang` → app; `loaded`, `decision`, `lang` → demo). Its moment: the
-    three signal groups light in sequence, then the latch closes on two.
+  - Judges' view is its own page (no iframe): it creates a **demo room**
+    (`src/rooms.py`, in memory), shows a QR of `/app/?code=XXXXXX` and the
+    code, and follows the room over Server-Sent Events (JSON polling fallback
+    after 3 stream errors). Phones join with the code; `/v1/score` with
+    `room` = the phone's publish token makes the *server* publish its own
+    result. Its moment: the three signal groups light in sequence, then the
+    latch closes on two. "Run the built-in scenarios here" needs no phone.
+  - **Your own payment** (user app, Settings): a plain-language form whose
+    answers `frontend/shared/custom.js` maps to the 27 features with the
+    `features.py` formulas, starting from a *typical legit payment* in the
+    generated data (e.g. a regular contact has the data's typical 12 same-payee
+    payments / 24 h; "first time paying" removes that history). Checked against
+    the model: ordinary -> release, much larger than usual -> nudge, first-time
+    + pressure -> hold, first-time large to a reported account -> hold.
+  - Shared CSS rule: `[hidden] { display: none !important }` (component
+    `display: grid/flex` rules otherwise override `hidden`).
   - Hindi copy is a draft — get a native-speaker check before public use.
   - Visual check: Playwright with the installed Edge (`channel="msedge"`) —
     screenshots at 360 / 390 / 768 / 1280 / 1920 px, keyboard-only pay flow,
@@ -402,8 +430,8 @@ interpreter: activate it (`.venv\Scripts\activate`) or call
   (Rs 3,592, unsure, receiving-hard `d_R=0` only + soft -> hold + "Priya
   Alerted" panel), and soft-only unclear #2415533 (Rs 4,729, unsure, 0 hard
   -> nudge with a "Pay anyway" second click). **If the model or features
-  change, re-pick them** so the model-implied sets still match the scripted
-  `conf_set` — `tests/test_ui.py` fails when they drift.
+  change, re-pick them** (`scripts/pick_scenarios.py`) so the model-implied sets
+  still match the scripted `conf_set` — the strict tests skip until you do.
 - **Model-driven by default**: `decide()` gets the model-implied conformal set
   (live `p_scam` + `load_conformal`). The sidebar toggle "Pin scripted
   conformal sets" switches to each scenario's scripted `conf_set` instead.

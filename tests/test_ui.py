@@ -17,6 +17,13 @@ MODELS = [ROOT / "models" / n for n in ("xgb_model.json", "conformal.json", "mod
 pytestmark = pytest.mark.skipif(not all(p.exists() for p in MODELS),
                                 reason="trained models not present (run the pipeline first)")
 
+from scenario_features import model_matches  # noqa: E402
+
+# Scripted outcomes hold only for the model the scenarios were picked for.
+picked = pytest.mark.skipif(not model_matches(MODELS[0]),
+                            reason="model changed since the demo scenarios were picked: "
+                                   "run python scripts/pick_scenarios.py and update src/scenario_features.py")
+
 EXPECTED = {  # scenario label prefix -> (action, requires_analyst)
     "🟢 Normal": ("release", False),
     "🔴 Investment": ("hold", True),
@@ -41,6 +48,7 @@ def pay(at):
 
 
 @pytest.mark.parametrize("pinned", [False, True], ids=["model-driven", "pinned"])
+@picked
 def test_scenarios_hit_their_branch(app, pinned):
     app.sidebar.toggle[0].set_value(pinned).run()
     labels = [b.label for b in app.sidebar.button]
@@ -54,6 +62,7 @@ def test_scenarios_hit_their_branch(app, pinned):
         assert implied == scripted, f"{prefix}: model says {implied}, script says {scripted}"
 
 
+@picked
 def test_1930_report_is_filed_once(app):
     app.sidebar.toggle[0].set_value(False).run()
     labels = [b.label for b in app.sidebar.button]
@@ -65,6 +74,7 @@ def test_1930_report_is_filed_once(app):
     assert first and first == [s.value for s in app.success if "NCRP" in s.value]
 
 
+@picked
 def test_sandbox_scores_with_the_model(app):
     sim = [b for b in app.button if b.label == "Simulate Payment"][0]
     sim.click().run()

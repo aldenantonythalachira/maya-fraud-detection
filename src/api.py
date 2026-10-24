@@ -34,6 +34,7 @@ Run:  uvicorn api:app --app-dir src            (from the repo root)
 
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import math
@@ -46,8 +47,8 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Literal, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Query
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi.responses import RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -55,7 +56,8 @@ import payment_review
 from conformal import classify, load_conformal
 from integrations import check_mulehunter
 from policy import DEFAULT_THRESHOLDS, active_signals, decide
-from risk_common import FEATURE_COLUMNS
+from risk_common import FEATURE_COLUMNS, LATENCY_SLO_MS
+from rooms import RateLimiter, RoomError, Rooms
 from scenario_features import SCENARIO_FEATURES, SCENARIO_STORY
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -63,7 +65,7 @@ FRONTEND = ROOT / "frontend"
 mimetypes.add_type("font/woff2", ".woff2")  # Windows' registry often lacks it
 API_VERSION = "v1"
 FEATURE_CONTRACT = "maya-features-v1"
-SLO_MS = 150.0  # per-payment latency budget from the spec
+SLO_MS = LATENCY_SLO_MS  # per-payment latency budget from the spec
 # Policy semantics version, shared with the stateful review path.
 POLICY_VERSION = payment_review.POLICY_VERSION
 
@@ -149,6 +151,14 @@ class SoftSignals(BaseModel):
     chat_stage: Literal["none", "escalated", "payment_demand"] = "none"
 
 
+class ScoreContext(BaseModel):
+    """Display-only labels for the demo screen (escaped there; never scored)."""
+    model_config = ConfigDict(extra="forbid")
+    scenario: Optional[str] = Field(None, max_length=32)
+    payee: Optional[str] = Field(None, max_length=80)
+    note: Optional[str] = Field(None, max_length=80)
+
+
 class ScoreRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     features: dict[str, Optional[float]] = Field(
@@ -158,6 +168,10 @@ class ScoreRequest(BaseModel):
     mulehunter_status: Optional[Literal["clean", "suspicious", "mule"]] = None
     request_id: Optional[str] = Field(None, max_length=100)
     explain: bool = Field(False, description="Also return every feature's SHAP contribution (slower).")
+    room: Optional[str] = Field(None, max_length=64,
+                                description="Publish token from POST /v1/rooms/join: the server "
+                                            "publishes this result to that demo screen.")
+    context: Optional[ScoreContext] = None
 
     @field_validator("features")
     @classmethod
@@ -188,6 +202,13 @@ class ScoreResponse(BaseModel):
     reason_features: list[str] = Field(
         default=[], description="Base feature behind each reason, in order (for localised copy).")
     explanation: Optional[dict] = None
+    room_published: Optional[bool] = Field(
+        None, description="With `room`: whether the result reached the demo screen.")
+
+
+class JoinRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    code: str = Field(min_length=4, max_length=16)
 
 
 class Evidence(BaseModel):
@@ -285,12 +306,40 @@ def default_service() -> Optional[payment_review.PaymentService]:
     return payment_review.PaymentService(adapter, os.environ.get("MAYA_REVIEW_DB", ":memory:"))
 
 
-def create_app(scorer=None, service=None, load_defaults: bool = True) -> FastAPI:
+def create_app(scorer=None, service=None, load_defaults: bool = True, rooms=None,
+               rate_limits: Optional[dict] = None) -> FastAPI:
     """Build the API. Tests inject a fake `scorer` / `service`; by default both are
-    loaded from models/ (and stay None, i.e. not ready, when the models are absent)."""
+    loaded from models/ (and stay None, i.e. not ready, when the models are absent).
+
+    `rate_limits` maps "score" / "rooms" / "join" to requests per minute per client
+    (MAYA_RATE_LIMIT=0 turns limiting off). Behind a reverse proxy set
+    MAYA_TRUST_PROXY=1 so the client is taken from X-Forwarded-For.
+    """
     if load_defaults:
         scorer = scorer if scorer is not None else default_scorer()
         service = service if service is not None else default_service()
+    rooms = rooms if rooms is not None else Rooms()
+    limits_on = os.environ.get("MAYA_RATE_LIMIT", "1") != "0"
+    limits = {"score": 120, "rooms": 20, "join": 30, **(rate_limits or {})}
+    limiters = {k: RateLimiter(v) for k, v in limits.items()}
+    trust_proxy = os.environ.get("MAYA_TRUST_PROXY") == "1"
+    streams = {"open": 0}
+    MAX_STREAMS = 200
+
+    def limit(kind: str, request: Request) -> None:
+        if not limits_on:
+            return
+        client = request.client.host if request.client else "unknown"
+        if trust_proxy:
+            client = request.headers.get("x-forwarded-for", client).split(",")[0].strip() or client
+        if not limiters[kind].allow(client):
+            raise HTTPException(429, "Too many requests; slow down a little", headers={"Retry-After": "5"})
+
+    def room_call(fn, *args):
+        try:
+            return fn(*args)
+        except RoomError as exc:
+            raise HTTPException(exc.status, str(exc)) from exc
 
     app = FastAPI(
         title="Maya risk-scoring API",
@@ -323,7 +372,8 @@ def create_app(scorer=None, service=None, load_defaults: bool = True) -> FastAPI
                 **s.info()}
 
     @app.post("/v1/score", response_model=ScoreResponse)
-    def score(req: ScoreRequest):
+    def score(req: ScoreRequest, request: Request):
+        limit("score", request)
         s = need_scorer()
         t0 = time.perf_counter()
         values = {c: (math.nan if req.features[c] is None else float(req.features[c]))
@@ -334,7 +384,7 @@ def create_app(scorer=None, service=None, load_defaults: bool = True) -> FastAPI
                           req.amount_inr, DEFAULT_THRESHOLDS, req.mulehunter_status)
         fired = active_signals(values, soft, DEFAULT_THRESHOLDS, req.mulehunter_status,
                                model_out["conformal_set"])
-        return {
+        response = {
             **decision,
             "p_scam": model_out["p_scam"],
             "conformal_set": model_out["conformal_set"],
@@ -347,6 +397,84 @@ def create_app(scorer=None, service=None, load_defaults: bool = True) -> FastAPI
             "reason_features": model_out.get("reason_features", []),
             "explanation": model_out.get("explanation"),
         }
+        if req.room:
+            # The server publishes its own result: a phone can't post a decision.
+            event = {k: response[k] for k in (
+                "action", "reasons", "auto_release_minutes", "requires_analyst", "p_scam",
+                "conformal_set", "fired_signals", "reason_features", "explanation",
+                "latency_ms", "model_version", "policy_version")}
+            event.update(amount_inr=req.amount_inr, soft_signals=soft,
+                         context=req.context.model_dump() if req.context else {})
+            try:
+                rooms.publish(req.room, event)
+                response["room_published"] = True
+            except RoomError:
+                response["room_published"] = False  # never fail the payment check itself
+        return response
+
+    # -- demo rooms: a judge screen follows payments made on phones ------------
+
+    @app.post("/v1/rooms", status_code=201)
+    def create_room(request: Request):
+        limit("rooms", request)
+        return room_call(rooms.create)
+
+    @app.post("/v1/rooms/join")
+    def join_room(body: JoinRequest, request: Request):
+        limit("join", request)
+        return room_call(rooms.join, body.code)
+
+    @app.get("/v1/rooms/{room_id}")
+    def room_status(room_id: str, watch: str = Query(..., max_length=64)):
+        return room_call(rooms.status, room_id, watch)
+
+    @app.get("/v1/rooms/{room_id}/events")
+    async def room_events(room_id: str, request: Request, watch: str = Query(..., max_length=64),
+                          after: int = Query(0, ge=0), format: Literal["sse", "json"] = "sse"):
+        """Live events for the judge view (read-only). `format=json` is a polling
+        fallback for proxies that buffer Server-Sent Events."""
+        try:  # a reconnecting EventSource resumes after the last event it saw
+            cursor = max(after, int(request.headers.get("last-event-id", after)))
+        except ValueError:
+            cursor = after
+        start = room_call(rooms.events, room_id, watch, cursor)  # also checks the token
+        if format == "json":
+            return {"events": start, "status": room_call(rooms.status, room_id, watch)}
+        if streams["open"] >= MAX_STREAMS:
+            raise HTTPException(503, "Too many live screens; use format=json polling",
+                                headers={"Retry-After": "5"})
+
+        async def stream():
+            nonlocal cursor
+            streams["open"] += 1
+            try:
+                pending, quiet = start, 0.0
+                deadline = time.monotonic() + 30 * 60  # clients reconnect with Last-Event-ID
+                while time.monotonic() < deadline:
+                    if await request.is_disconnected():
+                        return
+                    for e in pending:
+                        cursor = max(cursor, e["seq"])
+                        yield f"id: {e['seq']}\nevent: payment\ndata: {json.dumps(e, allow_nan=False)}\n\n"
+                    if not pending:
+                        quiet += 0.5
+                        if quiet >= 15:
+                            quiet = 0.0
+                            status = rooms.status(room_id, watch)
+                            yield f"event: status\ndata: {json.dumps(status)}\n\n"
+                    else:
+                        quiet = 0.0
+                    await asyncio.sleep(0.5)
+                    try:
+                        pending = rooms.events(room_id, watch, cursor)
+                    except RoomError:
+                        yield "event: end\ndata: {}\n\n"
+                        return
+            finally:
+                streams["open"] -= 1
+
+        return StreamingResponse(stream(), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
     @app.get("/v1/demo/scenarios")
     def demo_scenarios():

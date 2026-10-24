@@ -62,11 +62,16 @@ signals and returns release / nudge / hold with reasons; `/v1/payments...` wraps
 the stateful payment-review service. See `docs/API.md`.
 
 The same server hosts two web frontends (no build step):
-**http://127.0.0.1:8000/app/** — the everyday-user payment app (English / हिंदी,
-phone-first) — and **http://127.0.0.1:8000/demo/** — the judges' demo (the live
-app beside why Maya decided, plus evidence, robustness and a try-it sandbox).
+**`/demo/`** — the judges' view for the big screen — shows a QR code; phones that
+scan it open **`/app/`**, the everyday-user payment app (English / हिंदी), and
+every payment they make appears on the demo screen live, with why Maya decided.
 Run `python src/attack_sim.py --json-out models/attack_results.json` once so the
 demo's Robustness tab has numbers.
+
+**Put it online** (free, permanent `https://` address, phones anywhere):
+`python scripts/build_space.py --github YOUR_GITHUB/maya-site` publishes the
+site bundle to a private deploy repository that Render (free tier) builds and
+serves. See [docs/DEPLOY_SPACE.md](docs/DEPLOY_SPACE.md).
 
 ## Evaluation commands
 

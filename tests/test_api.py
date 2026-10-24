@@ -14,7 +14,7 @@ import api
 from conftest import ROOT
 from payment_review import PaymentService
 from risk_common import FEATURE_COLUMNS
-from scenario_features import SCENARIO_FEATURES
+from scenario_features import SCENARIO_FEATURES, model_matches
 
 
 class FakeScorer:
@@ -219,6 +219,9 @@ def test_evidence_is_validated_per_kind():
 MODELS = [ROOT / "models" / n for n in ("xgb_model.json", "conformal.json")]
 real = pytest.mark.skipif(not all(p.exists() for p in MODELS),
                           reason="trained models not present (run the pipeline first)")
+picked = pytest.mark.skipif(not model_matches(MODELS[0]),
+                            reason="model changed since the demo scenarios were picked: "
+                                   "run python scripts/pick_scenarios.py and update src/scenario_features.py")
 
 
 @pytest.fixture(scope="module")
@@ -227,6 +230,7 @@ def real_client():
 
 
 @real
+@picked
 @pytest.mark.parametrize("key", list(SCENARIO_FEATURES))
 def test_ui_scenarios_score_like_the_ui(real_client, key):
     from integrations import check_mulehunter

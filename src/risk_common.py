@@ -36,6 +36,9 @@ SMOKE_MODEL = "models/xgb_model_smoke.json"
 SMOKE_CONFORMAL = "models/conformal_smoke.json"
 SPLITS = ("train", "val", "calib", "test")
 
+# Per-payment latency budget from the spec (API reports, GNN verdict).
+LATENCY_SLO_MS = 150.0
+
 
 def carve_calib(df: pd.DataFrame) -> pd.DataFrame:
     """Relabel the later half of the val days as `calib`, in place.

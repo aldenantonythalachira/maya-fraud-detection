@@ -34,7 +34,7 @@ from conformal import (
     predict_sets,
 )
 from integrations import check_mulehunter
-from reasons import make_explainer, native_contrib, shap_matrix, top_reasons
+from reasons import make_explainer, native_contrib, risk_reasons, shap_matrix, top_reasons
 from risk_common import FEATURE_COLUMNS, TARGET, load_features
 
 # --- hard-rule constants ----------------------------------------------------
@@ -209,7 +209,8 @@ def run(args) -> int:
             sv = shap_matrix(explainer, X.iloc[[j]])[0]
         except Exception:
             sv = native_contrib(model, X.iloc[[j]])[0]
-        reasons = [text for _, _, text in top_reasons(sv)]
+        # same "only cite true reasons" filter as the API and UIs
+        reasons = risk_reasons(top_reasons(sv, k=len(FEATURE_COLUMNS)), row)
 
         decision = decide(conf_set, row, soft, reasons, amount, thr, mulehunter)
         fired = active_signals(row, soft, thr, mulehunter, conf_set)
