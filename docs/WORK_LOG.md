@@ -179,3 +179,12 @@
 - All three GitHub Actions jobs passed at 191de3d, including the live PostgreSQL
   two-instance test and Docker build/startup. Final missing-observation safeguard
   and mobile wrapping changes passed 31 focused local checks before publication.
+
+### Field research README update — 25 October 2026
+- Added a concise Background & Field Research section to the README, documenting
+  the team's visits to around 10 street vendors, fruit sellers and kirana stores
+  around NIT Warangal and the reported concerns: soundboxes, connectivity, fake
+  payment claims and phishing SMS.
+- Added the two user-provided field-visit photos under docs/field-research with
+  short captions and empty alt text, as requested. No application behavior,
+  transaction data or model artifacts changed.

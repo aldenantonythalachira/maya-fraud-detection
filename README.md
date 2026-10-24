@@ -26,6 +26,27 @@ The public companion sends derived intent only; raw message parsing stays in the
 browser. It abstains from behavioral scoring without bank history. The sandbox,
 public PaySim benchmark and partner-model contracts are separate sources.
 
+## Background & Field Research
+
+MAYA's merchant-safety priorities were informed by visits to around 10 street
+vendors, fruit sellers and kirana stores around the NIT Warangal campus. These
+conversations and observations grounded the project in the conditions small
+merchants face while accepting UPI payments.
+
+Recurring concerns included dependence on soundboxes for payment confirmation,
+connectivity interruptions, fake payment claims and phishing SMS reaching
+vendors' phones. Together, these findings point to a practical need: make payment
+status clear and help merchants recognize suspicious claims and messages without
+adding friction to everyday transactions.
+
+![ ](docs/field-research/vendor-kirana-visit.png)
+
+*Field visit at a neighborhood kirana store near NIT Warangal.*
+
+![ ](docs/field-research/street-vendor-visit.png)
+
+*Field visit at a streetside vendor stall near NIT Warangal.*
+
 ---
 
 Synthetic UPI scam-journey detector and Streamlit demonstration. The core uses
