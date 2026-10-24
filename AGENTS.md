@@ -253,9 +253,12 @@ formatter/test framework yet.
   then an incoming credit), `new_payee` (current payee not in timeline),
   `amount_spike` (current > 3× timeline mean); score = sum, capped 100.
 - `POST /api/circuit-breaker` (Pydantic `CircuitBreakerRequest`:
-  `reported_mule_id: str`) is a mock Scam DNA circuit breaker returning a plain
-  dict: `victims_alerted: 142`, `at_risk_transactions` (3 `{amount, time}` mocks),
-  `status: "alerts_sent"`.
+  `reported_mule_id: str`) is a REAL Scam DNA circuit breaker: it lazily loads
+  `data/transactions.csv` (`usecols=[sender_id, receiver_vpa, amount, ts]`, cached
+  once), filters `receiver_vpa == reported_mule_id`, returns
+  `victims_alerted = sender_id.nunique()`, the top-3 at-risk transactions by
+  `amount` (`{amount, time}`), and `status: "alerts_sent"`. The frontend passes a
+  real mule VPA (`u000849@okhdfcbank`).
 - **Private Mode** (raw-text privacy): `POST /api/extract-claim` (Pydantic
   `ClaimRequest {chat_message: str}` → `ClaimResponse {intent_claim,
   processed_in_memory: true}`) runs a mock keyword `_extract_intent` (refund→
@@ -418,7 +421,9 @@ formatter/test framework yet.
 ## Layout
 
 - `src/` — application code and entrypoints
-- `scripts/` — `bank_simulator.py` (HDFC remitter → Maya Bank API demo)
+- `scripts/` — `bank_simulator.py` (High-Throughput UPI Switch Simulator: 100 mock
+  txns via `rich`/`requests`, live progress bar + `rich.table` BANK SWITCH REPORT +
+  red "❌ CRITICAL ALERTS BLOCKED BEFORE NPCI" banner; `--n`/`--seed`/`--release`)
 - `api/` — FastAPI backend (`main.py`)
 - `ui/` — frontend / user interface
 - `frontend/` — Next.js web app (TypeScript + Tailwind)

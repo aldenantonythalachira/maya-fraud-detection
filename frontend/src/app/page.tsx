@@ -270,7 +270,7 @@ export default function Home() {
 
   async function runCircuit() {
     try {
-      setCircuit(await fetchCircuitBreaker("mule_123"));
+      setCircuit(await fetchCircuitBreaker("u000849@okhdfcbank"));
     } catch (e) {
       setError(
         e instanceof Error

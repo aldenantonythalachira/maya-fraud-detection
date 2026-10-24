@@ -20,6 +20,7 @@ import sys
 from pathlib import Path
 
 import pandas as pd
+from datetime import datetime
 import xgboost as xgb
 
 # src/ has no __init__.py, so make it importable the same way ui/app.py does.
@@ -353,16 +354,41 @@ def metrics() -> dict:
     }
 
 
+_txn_cache: dict = {}
+
+
+def _load_transactions() -> pd.DataFrame:
+    """Lazy, one-time load of the transactions needed for the circuit breaker."""
+    if "df" not in _txn_cache:
+        _txn_cache["df"] = pd.read_csv(
+            ROOT / "data" / "transactions.csv",
+            usecols=["sender_id", "receiver_vpa", "amount", "ts"],
+        )
+    return _txn_cache["df"]
+
+
+def _fmt_ts(ts) -> str:
+    s = str(ts)
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M:%S").strftime("%d %b %I:%M %p")
+    except ValueError:
+        return s
+
+
 @app.post("/api/circuit-breaker")
 def circuit_breaker(req: CircuitBreakerRequest) -> dict:
-    """Mock Scam DNA circuit breaker: freeze a reported mule's fan-out network."""
+    """Real Scam DNA circuit breaker: freeze a reported mule's fan-out network."""
+    df = _load_transactions()
+    mule = df[df["receiver_vpa"] == req.reported_mule_id]
+    victims = int(mule["sender_id"].nunique())
+    top = mule.nlargest(3, "amount")[["amount", "ts"]]
+    at_risk = [
+        {"amount": float(row.amount), "time": _fmt_ts(row.ts)}
+        for row in top.itertuples()
+    ]
     return {
-        "victims_alerted": 142,
-        "at_risk_transactions": [
-            {"amount": 40000, "time": "10:42 AM"},
-            {"amount": 75000, "time": "11:05 AM"},
-            {"amount": 300000, "time": "11:31 AM"},
-        ],
+        "victims_alerted": victims,
+        "at_risk_transactions": at_risk,
         "status": "alerts_sent",
     }
 
