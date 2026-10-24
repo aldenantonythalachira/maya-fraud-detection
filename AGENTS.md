@@ -191,6 +191,10 @@ formatter/test framework yet.
 
 ## FastAPI backend specifics (non-obvious)
 
+- **API key auth**: `/api/score` and `/api/score-trace` require the header
+  `X-API-Key: sk_live_maya_enterprise` (else `401`) via the `require_api_key`
+  FastAPI dependency. `/health`, `/api/metrics`, and the other endpoints are
+  unprotected. `GET /health` returns `{status, model_version: "maya-v1", uptime}`.
 - `api/main.py` exposes `POST /api/score` (Pydantic `Transaction`: `amount: float`,
   `d_R: int`, `z_t: float`, plus optional `e_t/g_t/pi_t: float = 0.0`,
   `is_screen_shared: bool = False`, `chat_stage: str = "none"`,
@@ -414,6 +418,7 @@ formatter/test framework yet.
 ## Layout
 
 - `src/` — application code and entrypoints
+- `scripts/` — `bank_simulator.py` (HDFC remitter → Maya Bank API demo)
 - `api/` — FastAPI backend (`main.py`)
 - `ui/` — frontend / user interface
 - `frontend/` — Next.js web app (TypeScript + Tailwind)

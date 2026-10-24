@@ -45,7 +45,7 @@ export type TraceResponse = {
 export async function scoreTransaction(data: Transaction): Promise<Decision> {
   const res = await fetch("http://127.0.0.1:8000/api/score", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-API-Key": "sk_live_maya_enterprise" },
     body: JSON.stringify(data),
   });
   return res.json();
@@ -54,7 +54,7 @@ export async function scoreTransaction(data: Transaction): Promise<Decision> {
 export async function fetchTrace(data: Transaction): Promise<TraceResponse> {
   const res = await fetch("http://127.0.0.1:8000/api/score-trace", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-API-Key": "sk_live_maya_enterprise" },
     body: JSON.stringify(data),
   });
   return res.json();
@@ -76,7 +76,7 @@ export async function fetchCircuitBreaker(
 ): Promise<CircuitBreakerResponse> {
   const res = await fetch("http://127.0.0.1:8000/api/circuit-breaker", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-API-Key": "sk_live_maya_enterprise" },
     body: JSON.stringify({ reported_mule_id: muleId }),
   });
   return res.json();
@@ -211,7 +211,7 @@ export async function extractClaim(
 ): Promise<ClaimResponse> {
   const res = await fetch("http://127.0.0.1:8000/api/extract-claim", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-API-Key": "sk_live_maya_enterprise" },
     body: JSON.stringify(data),
   });
   return res.json();
@@ -229,7 +229,7 @@ export async function requestReview(
 ): Promise<ReviewResponse> {
   const res = await fetch("http://127.0.0.1:8000/api/request-review", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", "X-API-Key": "sk_live_maya_enterprise" },
     body: JSON.stringify(data),
   });
   return res.json();

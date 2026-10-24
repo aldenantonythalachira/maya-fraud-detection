@@ -26,7 +26,7 @@ import xgboost as xgb
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, Header, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -66,6 +66,19 @@ _fedavg = _load_optional(ROOT / "models" / "fedavg_meta.json")
 _redteam = _load_optional(ROOT / "models" / "red_team_meta.json")
 
 app = FastAPI(title="Maya UPI Payment Guard", version="0.1.0")
+
+API_KEY = "sk_live_maya_enterprise"
+
+
+def require_api_key(x_api_key: str | None = Header(default=None)) -> str:
+    if x_api_key != API_KEY:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-API-Key")
+    return x_api_key
+
+
+@app.get("/health")
+def health() -> dict:
+    return {"status": "ok", "model_version": "maya-v1", "uptime": "active"}
 
 app.add_middleware(
     CORSMiddleware,
@@ -140,7 +153,7 @@ class CircuitBreakerRequest(BaseModel):
     reported_mule_id: str
 
 
-@app.post("/api/score")
+@app.post("/api/score", dependencies=[Depends(require_api_key)])
 def score(txn: Transaction) -> dict:
     """Two-stage decision, normalized to the 4-field decide() shape.
 
@@ -234,7 +247,7 @@ def evaluate_journey(req: JourneyRequest) -> JourneyResponse:
     return JourneyResponse(journey_risk_score=score, flags=flags)
 
 
-@app.post("/api/score-trace")
+@app.post("/api/score-trace", dependencies=[Depends(require_api_key)])
 def score_trace(txn: Transaction) -> TraceResponse:
     """Full Judge View trace of the two-stage pipeline (triage → policy engine)."""
     z_t = txn.z_t
