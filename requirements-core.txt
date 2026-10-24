@@ -9,3 +9,6 @@ shap>=0.45,<1
 streamlit>=1.45,<2
 plotly>=5.0,<7
 jinja2>=3.1.5,<4
+# Risk-scoring API (src/api.py)
+fastapi>=0.110,<1
+uvicorn>=0.29,<1

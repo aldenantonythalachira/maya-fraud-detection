@@ -93,3 +93,36 @@
 - Tests: CI switched to `python -m pytest -v` on requirements-dev.txt (core +
   pytest); 71 tests + policy self-test pass locally on pandas 3 and on the
   CI-style requirements. No model or data files committed.
+
+### Risk-scoring API (branch feature/scoring-api)
+
+- Why: a phone app cannot plug into Paytm/PhonePe (sandboxing; only the payer's
+  UPI app or bank can hold a payment), so Maya is exposed the way a bank would
+  integrate it: an HTTP risk-scoring service called before release.
+- Added src/api.py (FastAPI): stateless `POST /v1/score` on the 27-feature
+  contract `maya-features-v1`, stateful `/v1/payments...` wrappers over
+  PaymentService, `/v1/health`, `/v1/model`; docs in docs/API.md.
+- Moved the "only cite true reasons" filter into src/reasons.py and the four UI
+  scenario rows into src/scenario_features.py (shared by UI, API tests, client).
+- Added scripts/demo_bank_client.py (stdlib) and tests/test_api.py (21 tests;
+  real-model ones skip without models/). 92 tests pass with models; 83 pass /
+  9 skip without (CI-style, pandas 2.3.3). Demo: all scenario outcomes as
+  expected, server-side ~6 ms, round-trip p95 ~31 ms vs 150 ms budget.
+- Dependencies: fastapi + uvicorn in core, httpx in dev; lock file extended.
+
+### Web frontends: user app + judges' demo (branch feature/scoring-api)
+
+- Two new frontends on the scoring API, under `frontend/` (no build step):
+  `/app/` everyday-user payment app (English / Hindi, phone-first) and `/demo/`
+  judges' demo (live app + decision board + Evidence / Robustness / Model card
+  / Try it). Streamlit apps unchanged; Ashrith's `web/` untouched.
+- Design: rupee palette, Anek (Latin + Devanagari) self-hosted; contrast-checked
+  to WCAG AA; one orchestrated moment per surface; keyboard and reduced-motion
+  checked.
+- Backend: `GET /v1/demo/scenarios`, `reason_features` and `explain` on
+  `/v1/score`, `attack_sim.py --json-out` (shown in `/v1/model`), static mounts.
+  Scenario story text (en/hi) moved into `src/scenario_features.py`.
+- Verified: 95 tests pass with models (85 pass / 10 skip without); Playwright +
+  Edge screenshots of every scenario at 360–1920 px in both languages, no
+  console errors; keyboard-only pay reaches a hold. Hindi copy needs a native
+  speaker's review.

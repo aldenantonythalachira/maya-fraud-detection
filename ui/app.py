@@ -33,6 +33,7 @@ from conformal import (
 from integrations import check_fri, check_mulehunter, file_1930_report
 from policy import DEFAULT_THRESHOLDS, active_signals, decide
 from risk_common import ENGLISH_REASONS, FEATURE_COLUMNS
+from scenario_features import SCENARIO_FEATURES, SCENARIO_STORY
 
 MODEL_PATH = ROOT / "models" / "xgb_model.json"
 CONFORMAL_PATH = ROOT / "models" / "conformal.json"
@@ -99,38 +100,12 @@ def live_shap(model, feats: dict):
         return []
 
 
-def in_risky_range(base: str, value: float, thr=DEFAULT_THRESHOLDS) -> bool:
-    """True when the feature value itself is anomalous (same bars as the policy's
-    hard signals), so a reason's English text is actually true for this txn."""
-    checks = {
-        "n_t": value >= thr.n_t,
-        "e_t": value >= thr.e_t,
-        "z_t": value >= thr.z_t,
-        "pi_t": value >= thr.pi_t,
-        "d_R": value <= thr.d_r_max,
-        "zc_t": value >= thr.zc_t,
-        # Not policy hard signals; bars chosen so the English text is true:
-        # "several payments" = 2+ earlier ones, "forwards most" = >= 80%.
-        "v_t": value >= 2.0,
-        "ptr_t": value >= 0.8,
-        # g_t is ~0.997 on this synthetic graph (see AGENTS.md), so it never
-        # distinguishes a txn and is not cited.
-    }
-    return bool(checks.get(base, False))
-
-
 def risk_reasons(shap_rows: list, feats: dict, k: int = 3) -> list:
-    """Up to k English reasons, ranked by SHAP: the feature must push risk *up*
-    and its value must be in the risky range. One per base feature, so `z_t`
-    and `z_t_snd` don't both cite the same signal."""
-    row = synthesized_matrix(feats).iloc[0]
-    out, seen = [], set()
-    for feature, value, text in shap_rows:
-        base = feature.replace("_snd", "").replace("_rcv", "")
-        if value > 0 and base not in seen and in_risky_range(base, float(row[feature])):
-            seen.add(base)
-            out.append(text)
-    return out[:k]
+    """The shared "only cite true reasons" filter (src/reasons.py), applied to
+    the synthesized 27-col row."""
+    from reasons import risk_reasons as shared
+
+    return shared(shap_rows, synthesized_matrix(feats).iloc[0], k)
 
 
 def scam_dna_figure():
@@ -207,16 +182,6 @@ def journey_dataframe(journey: list):
 
 # --- scenarios --------------------------------------------------------------
 
-def real_features(comb: tuple, snd: tuple, rcv: tuple) -> dict:
-    """27-col feature dict from (n_t, e_t, g_t, z_t, pi_t, d_R, v_t, zc_t, ptr_t)
-    combined / payer / payee."""
-    bases = ("n_t", "e_t", "g_t", "z_t", "pi_t", "d_R", "v_t", "zc_t", "ptr_t")
-    feats = dict(zip(bases, comb))
-    feats.update({f"{b}_snd": v for b, v in zip(bases, snd)})
-    feats.update({f"{b}_rcv": v for b, v in zip(bases, rcv)})
-    return feats
-
-
 # Each scenario's features are copied (rounded to 4 dp) from the real test-split
 # txn in `source_txn`, picked to match the story; `amount` is that txn's amount.
 # `conf_set` is the scripted set, used only when the sidebar pin toggle is on.
@@ -225,19 +190,15 @@ SCENARIOS = [
         "key": "normal",
         "label": "Normal Transfer (Rs 36k to Mom)",
         "icon": "🟢",
-        "payee": "Mom",
-        "upi": "mom@okhdfcbank",
-        "amount": 36_307.70,
-        "note": "Rent help",
+        "payee": SCENARIO_STORY["normal"]["payee"]["en"],
+        "upi": SCENARIO_STORY["normal"]["upi"],
+        "amount": SCENARIO_FEATURES["normal"]["amount_inr"],
+        "note": SCENARIO_STORY["normal"]["note"]["en"],
         "phone": "9876543210",
         "account_id": "1001",
         "txn_id": 100001,
-        "source_txn": 2391121,
-        "features": real_features(
-            (38.0, 0.2644, 1.0, 4.6623, 0.0, 3.0, 2.0, 5.7600, 0.2515),
-            (38.0, 0.2644, 1.0, 4.6623, 0.0, 3.0, 2.0, 5.7600, 0.2515),
-            (40.0, 0.4234, 1.0, 1.2731, 0.0, 3.0, 2.0, 2.3709, 0.0),
-        ),
+        "source_txn": SCENARIO_FEATURES["normal"]["source_txn"],
+        "features": SCENARIO_FEATURES["normal"]["features"],
         "soft": {},
         "conf_set": FINE,
         "reasons": [
@@ -250,19 +211,15 @@ SCENARIOS = [
         "key": "investment",
         "label": "Investment Scam (High Amount)",
         "icon": "🔴",
-        "payee": "WealthGrow Investments",
-        "upi": "wealthgrow@ybl",
-        "amount": 196_538.18,
-        "note": "IPO allotment fee",
+        "payee": SCENARIO_STORY["investment"]["payee"]["en"],
+        "upi": SCENARIO_STORY["investment"]["upi"],
+        "amount": SCENARIO_FEATURES["investment"]["amount_inr"],
+        "note": SCENARIO_STORY["investment"]["note"]["en"],
         "phone": "9812345678",
         "account_id": "2002",
         "txn_id": 100002,
-        "source_txn": 2861134,
-        "features": real_features(
-            (65.0, 6.3706, 1.0, 6.4313, 0.0, 0.0, 3.0, 6.6293, 1.0892),
-            (65.0, 6.3706, 1.0, 6.4313, 0.0, 1.0, 3.0, 6.6293, 1.0892),
-            (41.0, 0.1964, 1.0, 6.0641, 0.0, 0.0, 3.0, 6.2621, 0.8784),
-        ),
+        "source_txn": SCENARIO_FEATURES["investment"]["source_txn"],
+        "features": SCENARIO_FEATURES["investment"]["features"],
         "soft": {},
         "conf_set": SCAM,
         "reasons": [ENGLISH_REASONS["z_t"], ENGLISH_REASONS["e_t"], ENGLISH_REASONS["d_R"]],
@@ -278,19 +235,15 @@ SCENARIOS = [
         "key": "police",
         "label": "Fake Police Call (Screen Shared)",
         "icon": "🔴",
-        "payee": "Officer R. Sharma (CBI)",
-        "upi": "cbi.verify@upi",
-        "amount": 3_592.49,
-        "note": "'Verification deposit'",
+        "payee": SCENARIO_STORY["police"]["payee"]["en"],
+        "upi": SCENARIO_STORY["police"]["upi"],
+        "amount": SCENARIO_FEATURES["police"]["amount_inr"],
+        "note": SCENARIO_STORY["police"]["note"]["en"],
         "phone": "9000000001",
         "account_id": "3003",
         "txn_id": 100003,
-        "source_txn": 2599999,
-        "features": real_features(
-            (57.0, 0.0117, 1.0, 2.5225, 0.0, 0.0, 0.0, 2.5225, 0.8883),
-            (57.0, 0.0104, 1.0, 1.8773, 0.0, 0.0, 0.0, 1.8773, 0.8883),
-            (55.0, 0.0117, 1.0, 2.5225, 0.0, 1.0, 0.0, 2.5225, 0.3235),
-        ),
+        "source_txn": SCENARIO_FEATURES["police"]["source_txn"],
+        "features": SCENARIO_FEATURES["police"]["features"],
         "soft": {"is_screen_shared": True, "chat_stage": "payment_demand"},
         "conf_set": UNSURE,
         "reasons": [ENGLISH_REASONS["d_R"], ENGLISH_REASONS["n_t"], ENGLISH_REASONS["g_t"]],
@@ -299,19 +252,15 @@ SCENARIOS = [
         "key": "unclear",
         "label": "Unclear Edge Case (Soft only)",
         "icon": "🟡",
-        "payee": "Rohan (marketplace)",
-        "upi": "rohan.p2p@okicici",
-        "amount": 4_729.22,
-        "note": "Second-hand phone",
+        "payee": SCENARIO_STORY["unclear"]["payee"]["en"],
+        "upi": SCENARIO_STORY["unclear"]["upi"],
+        "amount": SCENARIO_FEATURES["unclear"]["amount_inr"],
+        "note": SCENARIO_STORY["unclear"]["note"]["en"],
         "phone": "9123456789",
         "account_id": "4004",
         "txn_id": 100004,
-        "source_txn": 2415533,
-        "features": real_features(
-            (40.0, 0.2209, 1.0, 2.5972, 0.0, 3.0, 4.0, 3.0886, 0.4985),
-            (40.0, 0.0440, 1.0, 2.5765, 0.0, 3.0, 4.0, 3.0678, 0.4953),
-            (36.0, 0.2209, 1.0, 2.5972, 0.0, 3.0, 4.0, 3.0886, 0.4985),
-        ),
+        "source_txn": SCENARIO_FEATURES["unclear"]["source_txn"],
+        "features": SCENARIO_FEATURES["unclear"]["features"],
         "soft": {"is_voice_active": True},
         "conf_set": UNSURE,
         "reasons": [

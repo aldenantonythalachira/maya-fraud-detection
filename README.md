@@ -47,6 +47,27 @@ The UI scenarios use features copied from real test-split transactions and, by
 default, the model-implied conformal set drives `decide()`; a sidebar toggle
 pins the scripted sets instead.
 
+## Risk-scoring API (how a bank or UPI app would use Maya)
+
+A bank or UPI app calls Maya before releasing each payment. `src/api.py` serves
+that as a local FastAPI simulator (needs the trained `models/`):
+
+```text
+python -m uvicorn api:app --app-dir src     # http://127.0.0.1:8000/docs
+python scripts/demo_bank_client.py          # second terminal: a demo "bank"
+```
+
+`POST /v1/score` takes the 27-feature contract plus the amount and optional soft
+signals and returns release / nudge / hold with reasons; `/v1/payments...` wraps
+the stateful payment-review service. See `docs/API.md`.
+
+The same server hosts two web frontends (no build step):
+**http://127.0.0.1:8000/app/** — the everyday-user payment app (English / हिंदी,
+phone-first) — and **http://127.0.0.1:8000/demo/** — the judges' demo (the live
+app beside why Maya decided, plus evidence, robustness and a try-it sandbox).
+Run `python src/attack_sim.py --json-out models/attack_results.json` once so the
+demo's Robustness tab has numbers.
+
 ## Evaluation commands
 
 ```text

@@ -143,11 +143,12 @@ def run(args) -> int:
           f"{(text_before - text_after) * 100:>12.1f}")
     print(f"  {'Maya (no text features)':<26}{maya_before * 100:>13.1f}%{maya_before * 100:>12.1f}%{0.0:>12.1f}")
     print("adaptive journey attacks (measured):")
-    drops = {}
+    drops, caught = {}, {}
     for name, attack in ATTACKS.items():
         # Caught if any of the scammer's payments is flagged.
         p_after = np.max([model.predict_proba(part[cols])[:, 1] for part in attack(X)], axis=0)
         after = catch_rate(p_after, threshold)
+        caught[name] = after
         drops[name] = (maya_before - after) * 100.0
         tag = "" if name in TRAIN_ATTACKS else "  (held out of adversarial training)"
         print(f"  {'Maya / ' + name:<26}{maya_before * 100:>13.1f}%{after * 100:>12.1f}%"
@@ -163,6 +164,18 @@ def run(args) -> int:
     print(f"[attack_sim] VERDICT: {'PASS' if verdict else 'FAIL'} "
           f"({'strict' if args.strict else 'rewording-only; pass --strict to gate on adaptive attacks'}; {detail})")
     print("=" * 78)
+    if args.json_out:
+        out = Path(args.json_out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps({
+            "n_scams": n, "threshold": threshold, "baseline_catch_rate": maya_before,
+            "model_features": len(cols),
+            "attacks": [{"name": k, "catch_rate": caught[k], "drop_pts": drops[k],
+                         "held_out_of_training": k not in TRAIN_ATTACKS} for k in ATTACKS],
+            "note": "Known, white-box attacks on synthetic test scams; caught = recall at the "
+                    "val 1%-FPR threshold, a split scam counts as caught if any part is.",
+        }, indent=2))
+        print(f"[attack_sim] wrote {out}")
     return 0 if verdict else 1
 
 
@@ -178,6 +191,9 @@ def main(argv=None) -> int:
                     help="max acceptable Maya catch-rate drop in points")
     ap.add_argument("--strict", action="store_true",
                     help="also fail if any adaptive journey attack drops >= --drop-target")
+    ap.add_argument("--json-out", default=None,
+                    help="also write the results as JSON (e.g. models/attack_results.json, "
+                         "which the API's /v1/model and the judges' demo show)")
     args = ap.parse_args(argv)
     return run(args)
 
