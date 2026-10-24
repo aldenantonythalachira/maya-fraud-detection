@@ -10,3 +10,7 @@ jinja2>=3.1.5
 # Phase 7 GNN challenger (CPU-only torch; heavy, demo-only)
 torch>=2.0
 torch-geometric>=2.5
+# FastAPI backend (api/main.py)
+fastapi>=0.110
+uvicorn>=0.29
+pydantic>=2.0

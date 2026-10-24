@@ -213,6 +213,12 @@ def main(argv=None) -> int:
     champion = json.loads(Path(args.meta).read_text())["test_auroc"]
     print_table(champion, test_auc, latency)
 
+    if not args.smoke and test_auc is not None:
+        out = {"gnn_auroc": round(float(test_auc), 4),
+               "gnn_latency_ms": round(float(latency), 1)}
+        (Path("models") / "gnn_meta.json").write_text(json.dumps(out, indent=2))
+        print("[gnn] wrote models/gnn_meta.json")
+
     if args.smoke:
         print("[gnn] SMOKE OK")
     return 0

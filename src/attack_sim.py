@@ -133,6 +133,10 @@ def run(args) -> int:
     print(f"[attack_sim] VERDICT: {'PASS' if verdict else 'FAIL'} "
           f"(Maya drop {maya_drop:.1f} pts {'<' if verdict else '>='} {args.drop_target:.1f} pts target)")
     print("=" * 78)
+    out = {"maya_drop": round(float(maya_drop), 1),
+           "text_drop": round(float(text_drop), 1)}
+    (Path("models") / "red_team_meta.json").write_text(json.dumps(out, indent=2))
+    print("[attack_sim] wrote models/red_team_meta.json")
     return 0 if verdict else 1
 
 

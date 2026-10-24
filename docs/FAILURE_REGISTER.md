@@ -1,0 +1,10 @@
+# Maya — Failure Register
+
+| ID | Failure Cause | Present Response | Next Mitigation |
+|---|---|---|---|
+| F01 | Hinglish / out-of-grammar text (code-switched slang, non-standard script) | Model is text-agnostic (journey/money-flow features only), so it neither benefits nor breaks on text; a phrase-matching "text-only detector" collapses under rewording (see `src/attack_sim.py`, `REWORD_EVASION` 0.88). | Add a transliteration + code-mix-normalised text channel (in-process multilingual intent classifier). |
+| F02 | Slow-drip manipulation (many small amounts below the ₹1,000 triage bar) | `jev_triage` releases tiny amounts fast; `e_t`/`pi_t` partially catch probing, but drip timing is not explicitly modelled. | Add a rolling rate/velocity feature (count + sum over 1/7/30 days) and a cumulative-drip rule. |
+| F03 | Clean VPA with no history (new account, no graph edges, `d_R=3`) | `d_R` caps at 3 (no signal); a first-time payee with a benign VPA passes the graph check. | Cold-start features (age, KYC tier, device fingerprint) + a per-payee risk backstop from the MuleHunter/FRI ecosystem mocks. |
+| F07 | Duplicate provider evidence (d_R from the graph and MuleHunter from the same underlying report double-counted as independent) | Provenance is tracked: `build_evidence_sources` marks d_R + MuleHunter as sharing `source_id="report_123"`, and `decide()` ORs them into ONE "receiving" hard signal (no double count). | Extend source attribution to all signals and dedupe across providers in the hot path. |
+| F09 | Fake receipt / screenshot "proof" (image-based social engineering) | Not modelled — the pipeline never sees images, so a fake receipt is invisible. | Optional image-forensics channel (metadata + EXIF + artifact detection), gated behind analyst review. |
+| F12 | Low recall in real deployment (metrics measured on synthetic data may overstate recall) | Recall @ 1% FPR = 0.9689 on synthetic test; no real-data validation exists. | Shadow-mode pilot (see `docs/PILOT_BLUEPRINT.md`) to measure true recall/FP rate before enabling interventions. |

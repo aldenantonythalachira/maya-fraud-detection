@@ -8,8 +8,10 @@ feature engineering), the Phase 3 risk stack `src/risk_common.py`,
 `src/train_xgb.py`, `src/conformal.py`, `src/reasons.py`, the Phase 4 action
 engine `src/policy.py`, Phase 6 `src/attack_sim.py` (red-teaming) +
 `src/integrations.py` (ecosystem mocks), the Phase 7 GNN challenger
-`src/gnn_challenger.py` (PyTorch Geometric GraphSAGE), and the Phase 8 federated
-learning simulation `src/federated_sim.py` (FedAvg across two banks). No
+`src/gnn_challenger.py` (PyTorch Geometric GraphSAGE), the Phase 8 federated
+learning simulation `src/federated_sim.py` (FedAvg across two banks), the
+FastAPI backend `api/main.py` (wraps `policy.decide` behind `/api/score`), and
+the Next.js frontend `frontend/` (TypeScript + Tailwind, talks to the API). No
 formatter/test framework yet.
 
 - No package manager/venv chosen. `pip` is externally managed on this box and
@@ -53,6 +55,12 @@ formatter/test framework yet.
 - Phase 8 federated learning simulation (FedAvg across two banks):
   - `python3 src/federated_sim.py --smoke` (row-sampled, fast)
   - `python3 src/federated_sim.py` (full: ~45s, prints local vs global table)
+- FastAPI backend (wraps the Phase 4 policy engine):
+  - `python3 -m uvicorn api.main:app --reload` (serves `POST /api/score`)
+- Next.js frontend (in `frontend/`, talks to the API at `127.0.0.1:8000`):
+  - `cd frontend && npm run dev` (dev server on `http://localhost:3000`)
+  - `cd frontend && npm run build` (type-check + production build)
+  - `cd frontend && npm run lint` (ESLint)
 - There are no tests; `--smoke` plus the built-in `validate()` summary printed on
   each run is the verification step. A generator run is only healthy if
   `campaign_split_violations == 0` and `ref_integrity == True`. A feature run is
@@ -181,6 +189,157 @@ formatter/test framework yet.
   test has ~13 positives so its AUROC/recall are high-variance — the full run is
   the real number.
 
+## FastAPI backend specifics (non-obvious)
+
+- `api/main.py` exposes `POST /api/score` (Pydantic `Transaction`: `amount: float`,
+  `d_R: int`, `z_t: float`, plus optional `e_t/g_t/pi_t: float = 0.0`,
+  `is_screen_shared: bool = False`, `chat_stage: str = "none"`,
+  `intent_claim: str = "none"`, `payment_direction: str = "outgoing"`,
+  `mulehunter_status: str | None = None`). CORS is scoped to `http://localhost:3000`.
+- `src/` has no `__init__.py`, so the API injects `ROOT/src` onto `sys.path` and
+  imports `from policy import decide` (same pattern as `ui/app.py`). At startup it
+  loads `models/xgb_model.json`, `models/conformal.json` (qhat), and a SHAP
+  `TreeExplainer` (`make_explainer`) once — this pulls numpy/xgboost/shap at
+  import time (~1-2s), reused across requests.
+- Two-stage pipeline: `jev_triage(amount, d_R)` mock-releases trivial safe txns
+  (`amount < 1000 and d_R == 3`), else escalates to `decide()` with the conformal
+  set **pinned to `{fine, scam}`** (same reasoning as the Sandbox tab — the only
+  branch where the sliders/inputs change the outcome). `/api/score` ignores the new
+  `e_t/g_t/pi_t/chat_stage` fields for now (it hardcodes `n_t/e_t/g_t/pi_t` to 0
+  and only uses `z_t`/`d_R`/`is_screen_shared`).
+- The response is **normalized** to `decide()`'s 4-field shape
+  (`action`/`reasons`/`auto_release_minutes`/`requires_analyst`) on both the
+  release and escalate paths so the frontend sees one contract.
+- `POST /api/score-trace` returns a `TraceResponse` (`triage` {path, reason},
+  `features` (the 6 raw features), `conformal_set`, `shap_reasons` (3 real SHAP
+  strings), `signals_fired` {hard, soft}, `final_decision` {action,
+  auto_release_minutes, requires_analyst}, `evidence_sources` (list of
+  `{signal, source, source_id}`), `decision_signature` (SHA-256 of the
+  `final_decision` JSON)). `features` uses the client's `z_t/e_t/g_t/pi_t` (with
+  `n_t` set to a realistic `5.0` baseline), and `chat_stage` feeds the soft
+  signals (alongside `is_screen_shared`). The slow path runs the REAL pipeline:
+  `to_model_row()` mirrors the 6 combined features into `_snd`/`_rcv` to build an
+  18-col row, then `predict_proba()` → `conformal_classify(p_scam, qhat)` (real
+  set, no heuristic) → `shap_matrix()`/`top_reasons()` (with `native_contrib`
+  fallback) → `decide()`. The fast path (jev_triage releases) short-circuits to
+  `{fine}` + 3 hardcoded benign strings without touching the model.
+  `signals_fired` reuses `active_signals()` with `DEFAULT_THRESHOLDS`.
+- Provenance + intent: `build_evidence_sources(features, mulehunter_status)`
+  marks `d_R` (graph) and `mulehunter` as sharing `source_id="report_123"` when
+  `d_R <= 1` AND `mulehunter_status == "mule"` (so they aren't double-counted —
+  `decide()` already ORs them into one "receiving" hard signal). `txn.mulehunter_status`
+  is passed through to `decide()`/`active_signals()`. An **Intent Contradiction**
+  (`intent_claim == "receive_refund"` + `payment_direction == "outgoing"`) is
+  caught at the TOP of `/api/score-trace` (before fast/slow) and returns an
+  immediate HOLD trace with the reason "Intent Contradiction: Claimed refund but
+  initiating outgoing payment."
+- `GET /api/metrics` returns the REAL metrics read from `models/model_meta.json`,
+  `models/conformal.json`, and (when present) `models/gnn_meta.json`,
+  `models/fedavg_meta.json`, `models/red_team_meta.json`:
+  `{xgbAuroc: meta.test_auroc, auprc: meta.test_auprc, qhat: conf.qhat, alpha:
+  conf.alpha, datasetSize: meta.total_rows, gnnAuroc, fedavgAuroc, redTeamDrop}`.
+  The three research-derived keys fall back to `null` (not 0.0) when their JSON
+  file is missing — the frontend renders `"N/A"` for null values.
+  `model_meta.json` was extended with `val_rows`/`test_rows`/`total_rows` (real
+  split counts) so `datasetSize` is 3,054,055 without being hardcoded.
+- `POST /api/evaluate-journey` (Pydantic `JourneyRequest`: `timeline: list[TimelineEvent]`
+  `{amount, payee_id, direction}`, `current_amount`, `current_payee_id`) is a
+  pre-ML heuristic scorer returning `JourneyResponse {journey_risk_score, flags}`.
+  Three flags weighted 40/30/30: `small_payment_before_credit` (outgoing <₹1,000
+  then an incoming credit), `new_payee` (current payee not in timeline),
+  `amount_spike` (current > 3× timeline mean); score = sum, capped 100.
+- `POST /api/circuit-breaker` (Pydantic `CircuitBreakerRequest`:
+  `reported_mule_id: str`) is a mock Scam DNA circuit breaker returning a plain
+  dict: `victims_alerted: 142`, `at_risk_transactions` (3 `{amount, time}` mocks),
+  `status: "alerts_sent"`.
+- **Private Mode** (raw-text privacy): `POST /api/extract-claim` (Pydantic
+  `ClaimRequest {chat_message: str}` → `ClaimResponse {intent_claim,
+  processed_in_memory: true}`) runs a mock keyword `_extract_intent` (refund→
+  receive_refund, fee/payment→pay_fee, buy/purchase→buy_item, else none) entirely
+  in memory — the `chat_message` is never logged, persisted, or printed, and the
+  raw string is never echoed back. `POST /api/privacy-canary`
+  (`CanaryRequest {message: str}`) is a mock proof returning
+  `{status: "processed", stored: false, network_sent: false}`. Verified by
+  `/tmp/opencode/test_privacy.py` (intent + no-stdout-leak via `redirect_stdout`
+  + canary flags).
+- **Legitimate User Recourse**: `POST /api/request-review` (Pydantic
+  `ReviewRequest {trace_id: str, reason: str}` → `ReviewResponse {status,
+  reference_id, message}`) returns `status: "review_requested"` and a
+  deterministic `reference_id: "REQ-" + sha256(f"{trace_id}:{reason}")[:8].upper()`
+  (matching `integrations.py`'s NCRP pattern) with the fixed message "An
+  independent analyst will review this shortly."
+
+## Next.js frontend specifics (non-obvious)
+
+- `frontend/` was scaffolded with `create-next-app` (TypeScript, Tailwind v4,
+  ESLint flat config, App Router, `src/` dir, `@/*` alias, npm). Next.js 16.4.3 /
+  React 19.3.0. Tailwind v4 needs no `tailwind.config` file (CSS-first).
+- `frontend/src/lib/api.ts` exports the `Transaction`/`Decision` types mirroring
+  the Pydantic model + 4-field response and `scoreTransaction(data)` (POSTs to
+  `/api/score`), plus the Judge View types `FinalDecision`/`TraceResponse` and
+  `fetchTrace(data)` (POSTs to `/api/score-trace`). All return `res.json()`.
+  `Transaction` now has optional `e_t?/g_t?/pi_t?: number`, `chat_stage?: string`,
+  `intent_claim?/payment_direction?: string`, `mulehunter_status?: string | null`.
+  `TraceResponse` carries `evidence_sources: EvidenceSource[]`
+  (`{signal, source, source_id: string | null}`) and `decision_signature: string`,
+  and `triage.path` is `"fast" | "slow" | "intent"`. It exports `SCENARIOS` (6 demo
+  scenarios whose `payload` carries all 8 fields — the Fake Police and Unclear
+  scenarios set `g_t: 1.0`; the Fake Police one is titled "…(Priya Alert + Screen
+  Share)" and sets `intent_claim: "pay_fee"` + `payment_direction: "outgoing"`; the 6th "Intent Contradiction (Refund Scam)" sets
+  `intent_claim: "receive_refund"` + `payment_direction: "outgoing"`; Scenario 2
+  (Investment) and Scenario 6 also set `mulehunter_status: "mule"` so Scenario 2's
+  `d_R: 1` + mule shows the shared `source_id: "report_123"` provenance), a
+  `Metrics`
+  type + `fetchMetrics()` (GETs `/api/metrics`), `fetchCircuitBreaker(muleId)` +
+  `AtRiskTransaction`/`CircuitBreakerResponse` types (POSTs `{reported_mule_id}` to
+  `/api/circuit-breaker`), and `extractClaim(data)` +
+  `ClaimRequest`/`ClaimResponse` types (POSTs `{chat_message}` to
+  `/api/extract-claim`), and `requestReview(data)` +
+  `ReviewRequest`/`ReviewResponse` types (POSTs `{trace_id, reason}` to
+  `/api/request-review`). The hardcoded `PROJECT_METRICS` object was removed.
+- `frontend/src/components/Navbar.tsx` is a permanently-dark top navbar (title
+  "Maya — AI Fraud Engine" + a green `animate-ping` pulse dot with "System
+  Online"). It is rendered at the top of `app/layout.tsx` (the layout sets the
+  body to `min-h-screen bg-zinc-950 font-sans text-white`).
+- `frontend/src/app/page.tsx` is the "Pipeline Storyteller" dashboard: a fixed
+  left sidebar (`w-1/3`, sticky) + a main right story area (`flex-1`). The sidebar
+  has a red "Circuit Breaker" button (top) that calls `fetchCircuitBreaker("mule_123")`
+  and shows a "⚠️ Circuit Breaker Triggered" banner + at-risk table in the story
+  area, a "System Metrics" card that fetches `/api/metrics` via `useEffect` on
+  mount and renders 8 metrics through a `formatMetric` helper (bold gradient text
+  values; `null` → "N/A") — the 5 core metrics plus dynamic `gnnAuroc`/`fedavgAuroc`/
+  `redTeamDrop` read from the research scripts' JSON outputs. A bottom section toggles between the 5
+  `SCENARIOS` buttons and a Sandbox form. The Sandbox form's top is a "Jury
+  Workbench" block (a green "🔒 Private Mode: Raw text processed in memory only."
+  badge + a "Raw Chat Message (Untrusted)" `textarea` + an "Extract Intent &
+  Auto-Fill" button that calls `extractClaim()` and auto-fills `intent_claim`
+  (setting `payment_direction="outgoing"` when the extract is `receive_refund`) with
+  an inline "✓ Intent extracted: … Text was not stored." toast), then a divider and
+  a "Manual Override" form (6 number inputs Amount/d_R/z_t/e_t/g_t/pi_t, a Screen
+  Shared checkbox, Chat Stage + Intent Claim + Payment Direction + MuleHunter
+  Status `<select>`s, and a "Simulate Custom Trace" button). Both
+  scenarios and the
+  sandbox call `fetchTrace` and render a vertical stepper of the ML pipeline (local
+  `Step`/`Badge`/`Icon` components, inline SVG icons): Step 1 Raw Input
+  (amount/d_R/screen-shared from the submitted `payload`), Step 2 System-1 Triage
+  (fast→emerald / intent→red / slow→amber badge + reason), Step 3 Conformal
+  Prediction (qhat/alpha from the fetched `metrics`, set from the trace), Step 4
+  Explainability (up to 3 SHAP reasons), Step 5 Two-Signal Policy (hard=red /
+  soft=amber badges), Step 6 Final Action (massive tinted box; when `nudge`/`hold`
+  shows a "This was a mistake / Request Review" button that opens an inline
+  recourse panel — "Submit Request" calls `requestReview({trace_id:
+  decision_signature, reason})` and shows the `reference_id`/`message` in a green
+  box, and "Simulate Analyst Approval" flips `reviewApproved` → green Release;
+  also renders a rose/pink "🚨 Priya Alert Triggered…" banner when `hold` AND the
+  scenario name includes "Priya" AND `!reviewApproved`),
+  Step 7 Analyst Review (only when `requires_analyst`; the fixed note + mock
+  Approve Release / File 1930 Report buttons). A tab bar (Pipeline | Evidence &
+  Audit) wraps the stepper; the "Evidence & Audit" tab shows three cards — "Intent
+  Verification" (`payload.intent_claim` vs `payment_direction`, red alert on
+  refund+outgoing contradiction), "Evidence Sources" (maps `trace.evidence_sources`),
+  and "Signed Audit Record" (`trace.decision_signature` in monospace + lock icon).
+  The old sliders/3-tab Simulator were removed.
+
 ## Data generator specifics (non-obvious)
 
 - Determinism via `seed=42` and per-namespace RNGs (`make_rng`), so a given seed
@@ -255,7 +414,12 @@ formatter/test framework yet.
 ## Layout
 
 - `src/` — application code and entrypoints
+- `api/` — FastAPI backend (`main.py`)
 - `ui/` — frontend / user interface
+- `frontend/` — Next.js web app (TypeScript + Tailwind)
 - `models/` — model code or weights
 - `data/` — datasets (generated)
-- `docs/` — documentation
+- `docs/` — documentation: `METRICS_REPORT.md` (real model metrics + coverage +
+  benchmarking + known gaps), `FAILURE_REGISTER.md` (F01–F12 failure/mitigation
+  table), `DELIVERY_LEDGER.md` (phase-by-phase status + files), `PILOT_BLUEPRINT.md`
+  (shadow-mode deployment + rollback)

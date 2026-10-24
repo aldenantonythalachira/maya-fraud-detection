@@ -18,7 +18,9 @@ Run:  python3 src/federated_sim.py
 from __future__ import annotations
 
 import argparse
+import json
 import time
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
@@ -152,6 +154,10 @@ def run(args) -> int:
     print("[federated] conclusion: the FedAvg global model catches more scams than "
           "either bank alone, without any bank sharing raw customer data "
           "(only averaged predictions leave each bank).")
+    if not args.smoke:
+        out = {"fedavg_auroc": round(float(auc_g), 4)}
+        (Path("models") / "fedavg_meta.json").write_text(json.dumps(out, indent=2))
+        print("[federated] wrote models/fedavg_meta.json")
     print(f"[federated] done in {time.time() - t0:.1f}s")
     return 0
 
