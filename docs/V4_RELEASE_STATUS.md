@@ -18,7 +18,7 @@
 
 ## Important limits
 
-- Public release is **not live**: the user has no server, cloud account or registered hostname connected. Docker is not installed on this workstation. A successful local Python run does not validate Docker/TLS/PostgreSQL. CI and an actual target-host rehearsal must verify those paths.
+- Public release is **not live**: the user has no server, cloud account or registered hostname connected. Docker is not installed on this workstation. GitHub Actions verified the Docker image build/startup and the PostgreSQL two-instance integration at commit `191de3d`; the actual target-host and public TLS rehearsal remain pending.
 - Local SQLite full-path load results are short experiments on one machine, not production throughput or a guarantee for PostgreSQL replicas. See the frozen load report for saturation and rejected requests.
 - The root batch smoke model missed its benign-class calibration target and generalized poorly to wallet worlds. Its failure report is retained. A separate generator-specific sandbox model improves those local journeys; this does not establish real-world generalization. Synthetic class mix and generator structure make its held-out task easy.
 - PaySim is synthetic mobile-money data, not real UPI, and this run uses a disclosed chronological prefix. Opening balances are assumed pre-decision inputs for this benchmark. Partner availability still needs verification.
@@ -38,5 +38,7 @@
 `docs/evidence/load.json`: client-observed complete-review latency/errors on the stated local workload. No scoring microbenchmark is presented as payment-system capacity.
 
 `docs/evidence/browser.json`: automated browser integration checks, not a human comprehension study.
+
+Verification at `191de3d`: [all CI jobs passed](https://github.com/aldenantonythalachira/maya-fraud-detection/actions/runs/40115861372). Final local baseline before subsequent small safeguards: 137 tests passed, one PostgreSQL test skipped locally, 24 subtests; policy self-test 22/22. PR9 remains a draft to expose hosting and human-review gates.
 
 Raw data, trained artifacts, private session keys and live databases remain ignored by Git. Rebuild and verify bundles for each release. Preserve pre-event asset disclosure and finale commit history; this implementation does not change when prior work was created.

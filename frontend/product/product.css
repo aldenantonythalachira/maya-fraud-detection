@@ -475,6 +475,9 @@ footer {
 .observer .amount {
   font-size: 36px;
 }
+.observer small {
+  overflow-wrap: anywhere;
+}
 .observer input {
   max-width: 400px;
 }

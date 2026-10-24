@@ -176,3 +176,6 @@
 - Exact-address proxy trust replaced a rejected wildcard proposal; no broad
   forwarded-header trust remains. Customer/observer surfaces retain the source
   and simulated-money boundaries; no public server was provisioned.
+- All three GitHub Actions jobs passed at 191de3d, including the live PostgreSQL
+  two-instance test and Docker build/startup. Final missing-observation safeguard
+  and mobile wrapping changes passed 31 focused local checks before publication.

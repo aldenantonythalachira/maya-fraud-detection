@@ -199,3 +199,11 @@ def test_model_bundle_schema_and_hash_are_enforced(tmp_path):
     c=json.loads(conf.read_text());c['qhat_fine']=.999;conf.write_text(json.dumps(c))
     with pytest.raises(ValueError,match='hash mismatch'):
         LiveModel(tmp_path/'xgb_model.json',conf)
+
+
+def test_partner_missing_observations_cannot_produce_release(customer,monkeypatch):
+    from risk_common import FEATURE_COLUMNS
+    monkeypatch.setenv('MAYA_PARTNER_KEY','independent-partner-key-32-characters')
+    response=customer.post('/v1/partner/score',json={'features':{k:None for k in FEATURE_COLUMNS},'amount_inr':100},
+                           headers={'X-Api-Key':'independent-partner-key-32-characters'})
+    assert response.status_code==503 and 'no approval' in response.text

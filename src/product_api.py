@@ -545,6 +545,9 @@ def create_app(database=None, model=None, secret=None, raise_internal_errors=Fal
             req = ScoreRequest.model_validate(payload)
         except ValidationError:
             raise HTTPException(422, 'Invalid feature contract')
+        required=[base+side for base in ('n_t','g_t','pi_t','d_R','v_t') for side in ('','_snd','_rcv')]
+        if any(req.features[k] is None for k in required):
+            raise HTTPException(503,'Required behavioral observations are unavailable; no approval advice produced')
         from policy import decide
         from online_features import numeric
         started=time.perf_counter()
