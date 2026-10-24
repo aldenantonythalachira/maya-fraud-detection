@@ -207,7 +207,9 @@ class Simulator(Access):
                         policy_version=POLICY_VERSION, inference_version=INFERENCE_VERSION)
 
     def balance(self, wid, account):
-        return self.db.execute("SELECT COALESCE(SUM(delta),0) FROM sim_ledger WHERE world=? AND account=?", (wid, account)).fetchone()[0]
+        # PostgreSQL SUM(bigint) returns Decimal; the public money contract is
+        # always integer paise, never floating point or backend-dependent JSON.
+        return int(self.db.execute("SELECT COALESCE(SUM(delta),0) FROM sim_ledger WHERE world=? AND account=?", (wid, account)).fetchone()[0])
 
     def observe(self, token):
         with self.lock:

@@ -91,7 +91,7 @@ def private_review(record):
                        and record['payment']['recipient'] in (e['sender'],e['receiver'])][-24:])
 
 
-def create_app(database=None, model=None, secret=None):
+def create_app(database=None, model=None, secret=None, raise_internal_errors=False):
     production = os.getenv('MAYA_ENV') == 'production'
     origin = os.getenv('MAYA_PUBLIC_ORIGIN', '').rstrip('/')
     if production and (not origin.startswith('https://') or len(os.getenv('MAYA_SESSION_SECRET', '')) < 32):
@@ -218,6 +218,8 @@ def create_app(database=None, model=None, secret=None):
             response = await call_next(request)
         except Exception:
             app.state.metrics['errors'] += 1
+            if raise_internal_errors and not production:
+                raise
             response = JSONResponse({'detail': 'Service unavailable; no payment confirmed'}, status_code=503)
         if fresh:
             response.set_cookie('maya_session_v4', token + '.' + sign(token), httponly=True,

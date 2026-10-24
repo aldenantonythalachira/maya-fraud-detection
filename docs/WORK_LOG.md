@@ -165,3 +165,14 @@
 - Added deployment/release-status documents, safe backup tool and frozen evidence.
   User selected Docker+HTTPS/product name mayaupi but has no server/account/domain
   connected; no hosting resource, subscription or domain was purchased.
+
+### V4 release validation follow-up
+- Published staged commits to codex/v4-product and opened draft PR9.
+- Final local suite: 137 passed, 24 subtests; PostgreSQL skipped locally.
+  Docker image build and startup/readiness succeeded in GitHub Actions.
+- Corrected the CI health probe and PostgreSQL bigint-SUM conversion to integer
+  paise. The database job exercises two independent service connections,
+  idempotent creation/settlement and cross-instance observer grants.
+- Exact-address proxy trust replaced a rejected wildcard proposal; no broad
+  forwarded-header trust remains. Customer/observer surfaces retain the source
+  and simulated-money boundaries; no public server was provisioned.

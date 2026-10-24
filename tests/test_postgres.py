@@ -10,7 +10,7 @@ from test_product import FixtureModel,post,payment
 @pytest.mark.skipif(not os.getenv('MAYA_TEST_DATABASE_URL'),reason='PostgreSQL integration database not configured')
 def test_postgres_atomicity_two_connections_pairing_and_restart():
     url=os.environ['MAYA_TEST_DATABASE_URL']
-    apps=[create_app(url,FixtureModel(),secret='postgres-test-secret') for _ in range(2)]
+    apps=[create_app(url,FixtureModel(),secret='postgres-test-secret',raise_internal_errors=True) for _ in range(2)]
     clients=[TestClient(a) for a in apps]
     wid=None
     try:
@@ -19,6 +19,7 @@ def test_postgres_atomicity_two_connections_pairing_and_restart():
         key=secrets.token_hex(16)
         first=post(a,'/v1/sandbox/worlds',{'seed':42},key=key)
         assert first.status_code==201,first.text
+        assert isinstance(first.json()['accounts'][0]['balance_paise'],int)
         wid=first.json()['id'];b.cookies.update(dict(a.cookies))
         second=post(b,'/v1/sandbox/worlds',{'seed':42},key=key)
         assert first.json()==second.json()
