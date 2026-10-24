@@ -87,7 +87,12 @@ interpreter: activate it (`.venv\Scripts\activate`) or call
 - Phase 8 federated learning simulation (FedAvg across two banks):
   - `python src/federated_sim.py --smoke` (row-sampled, fast)
   - `python src/federated_sim.py` (full: ~60s, prints local vs global table)
-- Tests: `python -m pytest` (~20-35s, 71 tests incl. the unittest-style payment
+- Risk-scoring API: `python -m uvicorn api:app --app-dir src` (needs `models/`),
+  then `python scripts/demo_bank_client.py [--url ...]`. Reference: `docs/API.md`.
+  The same server hosts the web frontends: `/app/` (user app) and `/demo/`
+  (judges' demo). `python src/attack_sim.py --json-out models/attack_results.json`
+  feeds the demo's Robustness tab.
+- Tests: `python -m pytest` (~15-35s, 92 tests incl. the unittest-style payment
   review / safeguard suites). `tests/test_pipeline.py` runs the
   whole smoke chain (generator -> features with the exact brute-force check ->
   train -> conformal -> policy --eval) in a temp dir, so it needs no `data/`.
@@ -205,6 +210,42 @@ interpreter: activate it (`.venv\Scripts\activate`) or call
   `chat_stage` in `{escalated, payment_demand}`.
 - `requires_analyst` is True **only when the action is hold and amount > ₹100k**
   (not for release/nudge). Thresholds are a frozen `Thresholds` dataclass.
+- **Risk-scoring API** (`src/api.py`, FastAPI): `create_app(scorer, service,
+  load_defaults)` builds it; module-level `app` loads `models/` (env overrides
+  `MAYA_MODEL` / `MAYA_CONFORMAL` / `MAYA_REVIEW_DB`) and reports `not_ready`
+  (503 on scoring) when they are absent. `POST /v1/score` validates the exact
+  27-column feature contract `maya-features-v1` (`null` = missing → NaN),
+  computes the conformal set server-side, and returns `decide()`'s 4 fields +
+  `p_scam`, `conformal_set`, `fired_signals`, version hashes and latency.
+  Reasons use `reasons.risk_reasons()` (shared with the UI). `/v1/payments...`
+  wraps `PaymentService`; `http_error()` maps its ValueError messages to
+  404 / 403 / 422 / 409. Session = `X-Payer-Session` header (simulated, not
+  auth). The four UI scenarios' feature rows live in `src/scenario_features.py`
+  (shared by `ui/app.py`, `scripts/demo_bank_client.py`, `tests/test_api.py`),
+  with their en/hi story text in `SCENARIO_STORY` (served by
+  `GET /v1/demo/scenarios`). `/v1/score` always returns `reason_features` and,
+  with `"explain": true`, every feature's SHAP contribution.
+  Local latency ~6 ms server-side, ~30 ms round-trip p95 (SLO 150 ms).
+- **Web frontends** (`frontend/`, plain HTML/CSS/ES modules, no build step,
+  mounted by `create_app()` with `StaticFiles`): `frontend/user` → `/app`,
+  `frontend/judge` → `/demo`, `frontend/shared` → `/static` (tokens.css,
+  api.js, i18n.js, self-hosted Anek fonts, OFL). Kept apart from Ashrith's
+  unmerged `web/` wallet so the two don't collide.
+  - Design system: rupee palette (ink `#23264F`, paper `#F5F4FA`, lavender
+    `#C9C3EA`, leaf / turmeric / sindoor for release / nudge / hold; turmeric is
+    a fill only, `--turmeric-ink` for text — all pairs WCAG AA). One family,
+    Anek; its width axis does the work (wide amounts, condensed tables).
+  - User app: one orchestrated moment — the send line's dot travels and stops
+    part-way on a hold (red dashed remainder). Plain-language reasons come from
+    `reason_features` via `i18n.REASONS` (en/hi), plus the phone's own soft
+    signals; avatar initials always come from the English name.
+  - Judges' demo embeds `/app/?embed=1` and talks to it with `postMessage`
+    (`load`, `lang` → app; `loaded`, `decision`, `lang` → demo). Its moment: the
+    three signal groups light in sequence, then the latch closes on two.
+  - Hindi copy is a draft — get a native-speaker check before public use.
+  - Visual check: Playwright with the installed Edge (`channel="msedge"`) —
+    screenshots at 360 / 390 / 768 / 1280 / 1920 px, keyboard-only pay flow,
+    reduced motion; no console errors.
 - `src/payment_review.py` (simulated payment service) loads the conformal file
   with `load_conformal()` and calls `classify(p, qhat_fine, qhat_scam)`. Its
   `feature_snapshot()` adapter fills `v_t` / `zc_t` from same-recipient history

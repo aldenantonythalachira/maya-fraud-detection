@@ -46,6 +46,54 @@ def native_contrib(model, X) -> np.ndarray:
     return contribs[:, :-1]
 
 
+def shap_rows(model, explainer, X) -> list:
+    """All (feature, shap, text) rows for the first row of X, by |SHAP| (empty on failure)."""
+    try:
+        try:
+            sv = shap_matrix(explainer, X)[0]
+        except Exception:
+            sv = native_contrib(model, X)[0]
+        return top_reasons(sv, k=len(FEATURE_COLUMNS))
+    except Exception:
+        return []
+
+
+def in_risky_range(base: str, value: float, thr=None) -> bool:
+    """True when the feature value itself is anomalous (same bars as the policy's
+    hard signals), so a reason's English text is actually true for this txn."""
+    if thr is None:
+        from policy import DEFAULT_THRESHOLDS as thr  # lazy: policy imports this module
+    checks = {
+        "n_t": value >= thr.n_t,
+        "e_t": value >= thr.e_t,
+        "z_t": value >= thr.z_t,
+        "pi_t": value >= thr.pi_t,
+        "d_R": value <= thr.d_r_max,
+        "zc_t": value >= thr.zc_t,
+        # Not policy hard signals; bars chosen so the English text is true:
+        # "several payments" = 2+ earlier ones, "forwards most" = >= 80%.
+        "v_t": value >= 2.0,
+        "ptr_t": value >= 0.8,
+        # g_t is ~0.997 on this synthetic graph (see AGENTS.md), so it never
+        # distinguishes a txn and is not cited.
+    }
+    return bool(checks.get(base, False))
+
+
+def risk_reasons(rows: list, values, k: int = 3, with_features: bool = False) -> list:
+    """Up to k English reasons, ranked by SHAP: the feature must push risk *up*
+    and its value (`values[feature]`, a full feature row) must be in the risky
+    range. One per base feature, so `z_t` and `z_t_snd` don't both cite it.
+    With `with_features`, returns (base_feature, text) pairs instead of texts."""
+    out, seen = [], set()
+    for feature, value, text in rows:
+        base = feature.replace("_snd", "").replace("_rcv", "")
+        if value > 0 and base not in seen and in_risky_range(base, float(values[feature])):
+            seen.add(base)
+            out.append((base, text) if with_features else text)
+    return out[:k]
+
+
 def explain_row(model, explainer, X, index: int) -> list:
     row = X.iloc[[index]]
     try:
