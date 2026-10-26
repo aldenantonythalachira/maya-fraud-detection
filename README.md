@@ -1,6 +1,6 @@
-# 🛡️ MAYA: The Stripe Radar for Indian UPI
+#  MAYA: The Stripe Radar for Indian UPI
 
-> **🏆 Finalist: Amazon AI Cybersecurity Hackathon (Top 30 out of 5000)**  
+> ** Finalist: Amazon AI Cybersecurity Hackathon (Top 30 out of 5000)**  
 > ** Hosted at IIT Delhi**
 
 **Maya** is an enterprise-grade, full-stack, mathematically rigorous fraud detection engine designed specifically for the Indian UPI ecosystem. Unlike traditional systems that reactively blacklist accounts or blindly block users, Maya uses a **Two-Signal Rule**, **Conformal Prediction**, and **Graph Topology** to stop scams without ruining the experience for legitimate users.
@@ -41,24 +41,23 @@ Maya is built on rigorous mathematical foundations:
 
 ---
 
-## 🛠️ Quick Start
+## Quick Start
 
-### 1. Run the Backend API
 ```bash
 cd ~/maya
 python3 -m uvicorn api.main:app --reload
 
-2. Run the Next.js Frontend
-bash
+#2. Run the Next.js Frontend
 cd ~/maya/frontend
 npm run dev
+
 # Open http://localhost:3000
-3. Run the High-Throughput Bank Simulator
-bash
+
+#3. Run the High-Throughput Bank Simulator
 cd ~/maya
 python3 scripts/bank_simulator.py
-4. Verify the Bank API (cURL)
-bash
+
+#4. Verify the Bank API (cURL)
 curl -s -X POST http://127.0.0.1:8000/api/score-trace \
   -H "Content-Type: application/json" \
   -H "X-API-Key: sk_live_maya_enterprise" \
